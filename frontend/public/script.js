@@ -203,15 +203,77 @@ function initializeUI() {
 
 document.addEventListener('DOMContentLoaded', initializeUI);
 
-
 // ===================================================================
-// === COMPOSANT ProgressRing (gardé tel quel)
+// === COMPOSANT ProgressRing (VERSION COMPLÈTE ET CORRIGÉE)
 // ===================================================================
 class ProgressRing extends HTMLElement {
-    constructor() { /* ... code du progress ring ... */ }
-    setProgress(percent) { /* ... */ }
-    static get observedAttributes() { /* ... */ }
-    attributeChangedCallback(name, oldValue, newValue) { /* ... */ }
+    constructor() {
+        super(); // Ligne obligatoire pour commencer
+
+        // 1. Récupérer les attributs de la balise HTML
+        const stroke = this.getAttribute('stroke');
+        const radius = this.getAttribute('radius');
+        const color = this.getAttribute('color');
+        const normalizedRadius = radius - stroke * 2;
+        this._circumference = normalizedRadius * 2 * Math.PI;
+
+        // 2. Créer un "Shadow DOM" pour encapsuler le style et la structure
+        this._root = this.attachShadow({ mode: 'open' });
+
+        // 3. Injecter le code SVG et CSS à l'intérieur du composant
+        this._root.innerHTML = `
+            <svg
+                height="${radius * 2}"
+                width="${radius * 2}"
+            >
+                <circle
+                    stroke="${color}"
+                    stroke-dasharray="${this._circumference} ${this._circumference}"
+                    style="stroke-dashoffset:${this._circumference}"
+                    stroke-width="${stroke}"
+                    fill="transparent"
+                    r="${normalizedRadius}"
+                    cx="${radius}"
+                    cy="${radius}"
+                />
+            </svg>
+
+            <style>
+                circle {
+                    transition: stroke-dashoffset 0.35s;
+                    transform: rotate(-90deg);
+                    transform-origin: 50% 50%;
+                }
+            </style>
+        `;
+    }
+
+    /**
+     * Méthode pour mettre à jour la progression de l'anneau.
+     * @param {number} percent - Le pourcentage de progression (0-100).
+     */
+    setProgress(percent) {
+        const offset = this._circumference - (percent / 100 * this._circumference);
+        const circle = this._root.querySelector('circle');
+        circle.style.strokeDashoffset = offset;
+    }
+
+    /**
+     * Indique au navigateur quel attribut HTML "surveiller".
+     */
+    static get observedAttributes() {
+        return ['progress'];
+    }
+
+    /**
+     * Fonction appelée automatiquement quand un attribut surveillé change.
+     */
+    attributeChangedCallback(name, oldValue, newValue) {
+        if (name === 'progress') {
+            this.setProgress(newValue);
+        }
+    }
 }
-// Le code complet du ProgressRing va ici...
+
+// On enregistre le nouvel élément HTML 'progress-ring'
 window.customElements.define('progress-ring', ProgressRing);

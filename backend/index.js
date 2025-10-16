@@ -15,7 +15,7 @@ async function handleAuthAndCors(req, res) {
 
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
-    return null; // Stoppe l'exécution pour la requête OPTIONS
+    return null;
   }
 
   const authHeader = req.header('Authorization');
@@ -28,10 +28,10 @@ async function handleAuthAndCors(req, res) {
   try {
     const ticket = await client.verifyIdToken({
         idToken: idToken,
-        audience: '1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com', // TRÈS IMPORTANT
+        audience: '1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com',
     });
     const payload = ticket.getPayload();
-    return payload.email; // Renvoie l'email de l'utilisateur si le jeton est valide
+    return payload.email;
   } catch (error) {
     console.error("Échec de la vérification du jeton :", error.message);
     res.status(401).send('Accès non autorisé : Jeton invalide.');
@@ -41,12 +41,19 @@ async function handleAuthAndCors(req, res) {
 
 exports.getUserCIDs = async (req, res) => {
   const userEmail = await handleAuthAndCors(req, res);
-  if (!userEmail) return; // Stoppe si l'authentification ou CORS a échoué
+  if (!userEmail) return;
 
   try {
-    const snapshot = await firestore.collection('utilisateurs').where('user account', '==', userEmail).get();
-    const grantedCIDs = snapshot.docs.map(doc => doc.data()['CID email']);
+    const usersCollection = firestore.collection('utilisateurs');
+    const snapshot = await usersCollection.where('authorizedUsers', 'array-contains', userEmail).get();
+
+    if (snapshot.empty) {
+      return res.status(200).json([]);
+    }
+
+    const grantedCIDs = snapshot.docs.map(doc => decodeURIComponent(doc.id));
     res.status(200).json(grantedCIDs);
+
   } catch (error) {
     console.error("Erreur dans getUserCIDs :", error);
     res.status(500).send("Erreur interne du serveur.");
@@ -55,7 +62,7 @@ exports.getUserCIDs = async (req, res) => {
 
 exports.getNext10Tokens = async (req, res) => {
   const userEmail = await handleAuthAndCors(req, res);
-  if (!userEmail) return; // Stoppe si l'authentification ou CORS a échoué
+  if (!userEmail) return;
 
   const { cid } = req.body;
   if (!cid) {
@@ -63,21 +70,22 @@ exports.getNext10Tokens = async (req, res) => {
   }
 
   try {
-    const accessSnapshot = await firestore.collection('utilisateurs')
-      .where('user account', '==', userEmail)
-      .where('CID email', '==', cid)
-      .limit(1)
-      .get();
+    // **CORRECTION IMPORTANTE : VÉRIFICATION DES PERMISSIONS**
+    const encodedCidForPermission = encodeURIComponent(String(cid).trim().replace(/\//g, "_"));
+    const userPermissionDocRef = firestore.collection('utilisateurs').doc(encodedCidForPermission);
+    const userPermissionDoc = await userPermissionDocRef.get();
 
-    if (accessSnapshot.empty) {
+    // On vérifie si le document existe ET si l'utilisateur est dans le tableau
+    if (!userPermissionDoc.exists || !userPermissionDoc.data().authorizedUsers.includes(userEmail)) {
       await logRequest(userEmail, cid, "access DENIED");
-      return res.status(403).send("Accès refusé.");
+      return res.status(403).send("Accès refusé : permission non accordée pour ce CID.");
     }
+    // **FIN DE LA CORRECTION**
     
     await logRequest(userEmail, cid, "access granted");
 
-    const encodedCid = encodeURIComponent(String(cid).replace(/\//g, "_"));
-    const accountDoc = await firestore.collection('comptes').doc(encodedCid).get();
+    const encodedCidForAccount = encodeURIComponent(String(cid).trim().replace(/\//g, "_"));
+    const accountDoc = await firestore.collection('comptes').doc(encodedCidForAccount).get();
 
     if (!accountDoc.exists) {
       return res.status(404).send(`Secret introuvable pour le CID ${cid}.`);
