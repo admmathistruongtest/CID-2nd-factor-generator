@@ -1,22 +1,19 @@
-// Fichier : backend/index.js
-
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const { totp } = require('otplib');
 const firestore = new Firestore();
 
-// L'adresse de votre site web. C'est la seule origine que nous autoriserons.
 const ALLOWED_ORIGIN = 'https://cid-2nd-factor-generator.web.app';
 
 /**
  * Cloud Function pour lister les CIDs de l'utilisateur.
  */
 exports.getUserCIDs = async (req, res) => {
-  // === DÉBUT DU BLOC CORS ===
+  // === DÉBUT DU BLOC CORS CORRIGÉ ===
   res.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
-  // Gère la requête "preflight" du navigateur
+  // La ligne la plus importante : répondre à l'appel de vérification
   if (req.method === 'OPTIONS') {
     return res.status(204).send('');
   }
@@ -41,7 +38,7 @@ exports.getUserCIDs = async (req, res) => {
  * Cloud Function pour générer les tokens TOTP.
  */
 exports.getNext10Tokens = async (req, res) => {
-  // === DÉBUT DU BLOC CORS ===
+  // === DÉBUT DU BLOC CORS CORRIGÉ (identique) ===
   res.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -55,43 +52,7 @@ exports.getNext10Tokens = async (req, res) => {
   if (!userEmail) {
     return res.status(401).send("Accès non autorisé : utilisateur non identifié.");
   }
-
-  try {
-    const snapshot = await firestore.collection('utilisateurs').where('user account', '==', userEmail).get();
-
-    if (snapshot.empty) {
-      return res.status(200).json([]);
-    }
-
-    const grantedCIDs = snapshot.docs.map(doc => doc.data()['CID email']);
-    res.status(200).json(grantedCIDs);
-
-  } catch (error) {
-    console.error("Erreur dans getUserCIDs :", error);
-    res.status(500).send("Erreur interne du serveur.");
-  }
-};
-
-
-/**
- * Cloud Function pour générer les tokens TOTP.
- */
-exports.getNext10Tokens = async (req, res) => {
-  // === AJOUT POUR CORS (identique à la première fonction) ===
-  res.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-  res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
-  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(204).send('');
-  }
-  // === FIN DE L'AJOUT POUR CORS ===
-
-  const userEmail = req.auth?.token?.email;
-  if (!userEmail) {
-    return res.status(401).send("Accès non autorisé : utilisateur non identifié.");
-  }
-
+  
   const { cid } = req.body;
   if (!cid) {
     return res.status(400).send("Erreur : le paramètre 'cid' est manquant.");
@@ -120,7 +81,7 @@ exports.getNext10Tokens = async (req, res) => {
 
     const secret = accountDoc.data()['totp secret'];
     if (!secret) {
-      return res.status(404).send(`Champ 'totp secret' manquant pour le CID ${cid}.`);
+        return res.status(404).send(`Champ 'totp secret' manquant pour le CID ${cid}.`);
     }
 
     const cleanSecret = secret.replace(/\s/g, '');
@@ -138,13 +99,11 @@ exports.getNext10Tokens = async (req, res) => {
     }
 
     res.status(200).json(tokens);
-
   } catch (error) {
     console.error("Erreur dans getNext10Tokens:", error);
     res.status(500).send("Erreur interne du serveur.");
   }
 };
-
 
 /**
  * Fonction interne pour logger les requêtes.
@@ -158,6 +117,6 @@ async function logRequest(userEmail, cidEmail, status) {
       date: FieldValue.serverTimestamp()
     });
   } catch(error) {
-    console.error("Échec de l'écriture du log :", error);
+      console.error("Échec de l'écriture du log :", error);
   }
 }
