@@ -1,28 +1,47 @@
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const { totp } = require('otplib');
+const { OAuth2Client } = require('google-auth-library');
+
 const firestore = new Firestore();
+const client = new OAuth2Client();
 
 const ALLOWED_ORIGIN = 'https://cid-2nd-factor-generator.web.app';
 
-/**
- * Cloud Function pour lister les CIDs de l'utilisateur.
- */
-exports.getUserCIDs = async (req, res) => {
-  // === DÉBUT DU BLOC CORS CORRIGÉ ===
+// Middleware pour gérer CORS et l'authentification
+async function handleAuthAndCors(req, res) {
   res.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
-  // La ligne la plus importante : répondre à l'appel de vérification
   if (req.method === 'OPTIONS') {
-    return res.status(204).send('');
+    res.status(204).send('');
+    return null; // Stoppe l'exécution pour la requête OPTIONS
   }
-  // === FIN DU BLOC CORS ===
 
-  const userEmail = req.auth?.token?.email;
-  if (!userEmail) {
-    return res.status(401).send("Accès non autorisé : utilisateur non identifié.");
+  const authHeader = req.header('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).send('Accès non autorisé : Jeton manquant.');
+    return null;
   }
+
+  const idToken = authHeader.split('Bearer ')[1];
+  try {
+    const ticket = await client.verifyIdToken({
+        idToken: idToken,
+        audience: '1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com', // TRÈS IMPORTANT
+    });
+    const payload = ticket.getPayload();
+    return payload.email; // Renvoie l'email de l'utilisateur si le jeton est valide
+  } catch (error) {
+    console.error("Échec de la vérification du jeton :", error.message);
+    res.status(401).send('Accès non autorisé : Jeton invalide.');
+    return null;
+  }
+}
+
+exports.getUserCIDs = async (req, res) => {
+  const userEmail = await handleAuthAndCors(req, res);
+  if (!userEmail) return; // Stoppe si l'authentification ou CORS a échoué
 
   try {
     const snapshot = await firestore.collection('utilisateurs').where('user account', '==', userEmail).get();
@@ -34,25 +53,10 @@ exports.getUserCIDs = async (req, res) => {
   }
 };
 
-/**
- * Cloud Function pour générer les tokens TOTP.
- */
 exports.getNext10Tokens = async (req, res) => {
-  // === DÉBUT DU BLOC CORS CORRIGÉ (identique) ===
-  res.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
-  res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
-  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  const userEmail = await handleAuthAndCors(req, res);
+  if (!userEmail) return; // Stoppe si l'authentification ou CORS a échoué
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).send('');
-  }
-  // === FIN DU BLOC CORS ===
-
-  const userEmail = req.auth?.token?.email;
-  if (!userEmail) {
-    return res.status(401).send("Accès non autorisé : utilisateur non identifié.");
-  }
-  
   const { cid } = req.body;
   if (!cid) {
     return res.status(400).send("Erreur : le paramètre 'cid' est manquant.");
