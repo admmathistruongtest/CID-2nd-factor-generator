@@ -86,3 +86,7 @@
     .note{padding:8px 12px; color:var(--muted); font-size:12px; text-align:center}
 
     progress-ring circle{transition:stroke-dashoffset .35s; transform:rotate(-90deg); transform-origin:50% 50%;}
+
+    #auth-container { max-width: 400px; margin: 5em auto; text-align: center; padding: 2em; border: 1px solid #ddd; border-radius: 8px; }
+    .g_id_signin { display: inline-block; }
+    #app-container { display: none; } /* Caché par défaut */

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CID Authenticator</title>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Material+Symbols+Outlined" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+  <div id="auth-container">
+    <h2>Bienvenue sur le CID Authenticator</h2>
+    <p>Veuillez vous connecter avec votre compte Google pour continuer.</p>
+    
+    <div id="g_id_onload"
+         data-client_id="1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com"
+         data-callback="handleCredentialResponse">
+    </div>
+    
+    <div class="g_id_signin" data-type="standard"></div>
+  </div>
+
+
+  <div id="app-container">
+    <header class="top">
+      <h1>CID Authenticator</h1>
+      <div class="grow"></div>
+      <label class="toolbar" aria-label="Rechercher un CID">
+        <span class="material-symbols-outlined">search</span>
+        <input id="search" type="search" placeholder="Rechercher un CID...">
+      </label>
+      <button id="zoomToggle" class="btn ghost" title="Agrandir">
+        <span class="material-symbols-outlined">zoom_in</span> Zoom in
+      </button>
+    </header>
+
+    <div class="wrap">
+      <div class="card">
+        <ul id="cid-list"></ul>
+        <div class="note">Si les codes sont épuisés, rechargez la page.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
