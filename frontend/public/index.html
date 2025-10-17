@@ -28,16 +28,26 @@
 
   <div id="app-container">
     <header class="top">
-      <h1>CID Authenticator</h1>
-      <div class="grow"></div>
-      <label class="toolbar" aria-label="Rechercher un CID">
-        <span class="material-symbols-outlined">search</span>
-        <input id="search" type="search" placeholder="Rechercher un CID...">
-      </label>
-      <button id="zoomToggle" class="btn ghost" title="Agrandir">
-        <span class="material-symbols-outlined">zoom_in</span> Zoom in
-      </button>
-    </header>
+        <h1>CID Authenticator</h1>
+        <div class="grow"></div>
+        <label class="toolbar" aria-label="Rechercher un CID">
+            <span class="material-symbols-outlined">search</span>
+            <input id="search" type="search" placeholder="Rechercher un CID...">
+        </label>
+
+        <div class="user-profile-container">
+            <button class="user-profile-btn" id="user-profile-btn" title="Mon compte">
+                <img id="user-avatar" src="" alt="Avatar">
+                <span id="user-email" class="user-email"></span>
+            </button>
+            <div class="logout-dropdown" id="logout-dropdown">
+                <button id="logout-btn">
+                    <span class="material-symbols-outlined">logout</span>
+                    Déconnexion
+                </button>
+            </div>
+        </div>
+      </header>
 
     <div class="wrap">
       <div class="card">

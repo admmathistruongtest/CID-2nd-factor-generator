@@ -71,11 +71,43 @@
     }
     .btn.tiny[aria-expanded="true"]{ background:#e5e7eb; color:#111827; }
 
-    .token{
-      text-align:center; background:#0b1220; overflow:hidden;
-      height:0; transition:height .25s ease;
-      border-top:1px solid #0b1220;
+    /* MODIFIEZ CETTE RÈGLE EXISTANTE */
+    .token {
+      /* Ajouté pour le positionnement du bouton */
+      position: relative; 
+      
+      display: flex;
+      /* Changé pour centrer le contenu principal */
+      justify-content: center; 
+      align-items: center;
+      
+      /* Le reste ne change pas */
+      padding: 0 14px;
+      background: #0b1220;
+      overflow: hidden;
+      height: 0;
+      transition: height .25s ease;
+      border-top: 1px solid #0b1220;
     }
+
+    /* AJOUTEZ CES NOUVELLES RÈGLES */
+    .token-content {
+      display: flex;
+      align-items: center;
+    }
+
+    .token .copy-btn {
+      position: absolute; /* Sort le bouton du flux normal */
+      right: 14px; /* Le colle à droite (aligné avec le padding) */
+      top: 50%; /* Le centre verticalement */
+      transform: translateY(-50%); /* Ajustement fin du centrage vertical */
+    }
+
+    .btn.copy-btn.copied {
+      background-color: #28a745;
+      color: white;
+    }
+
     .displayCounter{
       display:inline-block; color:#c6e1ff;
       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -85,8 +117,96 @@
     .wheel{vertical-align:middle;}
     .note{padding:8px 12px; color:var(--muted); font-size:12px; text-align:center}
 
-    progress-ring circle{transition:stroke-dashoffset .35s; transform:rotate(-90deg); transform-origin:50% 50%;}
+    progress-ring circle {
+      transition: stroke-dashoffset .35s;
+      /* La rotation place le début en haut, le scaleX(-1) inverse le sens du tracé */
+      transform: rotate(-90deg) scaleX(-1); 
+      transform-origin: 50% 50%;
+    }
 
     #auth-container { max-width: 400px; margin: 5em auto; text-align: center; padding: 2em; border: 1px solid #ddd; border-radius: 8px; }
     .g_id_signin { display: inline-block; }
     #app-container { display: none; } /* Caché par défaut */
+
+    /* Conteneur principal du profil */
+    .user-profile-container {
+        position: relative; /* Référence pour le positionnement du menu déroulant */
+    }
+
+    /* Bouton affichant les infos utilisateur */
+    .user-profile-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background-color: #f1f3f7;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 4px 12px 4px 4px; /* Un peu plus d'espace à droite pour le texte */
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .user-profile-btn:hover,
+    .user-profile-btn:focus-within {
+      background-color: #e5e7eb;
+    }
+
+    /* Avatar de l'utilisateur */
+    .user-profile-btn img {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background-color: #ccc; /* Couleur de fond si l'image ne charge pas */
+    }
+
+    /* Email de l'utilisateur */
+    .user-profile-btn .user-email {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* Menu déroulant pour la déconnexion */
+    .logout-dropdown {
+      position: absolute;
+      top: 110%; /* Juste en dessous du bouton */
+      right: 0;
+      background-color: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid #eef2f7;
+      padding: 8px;
+      width: 160px; /* Largeur fixe */
+      z-index: 20;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-10px);
+      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
+    }
+
+    /* Classe pour afficher le menu */
+    .logout-dropdown.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    /* Bouton de déconnexion */
+    #logout-btn {
+      width: 100%;
+      background: #fee2e2;
+      color: #b91c1c;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #logout-btn:hover {
+      background: #fecaca;
+    }

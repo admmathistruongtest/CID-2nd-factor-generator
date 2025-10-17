@@ -51,7 +51,9 @@ exports.getUserCIDs = async (req, res) => {
       return res.status(200).json([]);
     }
 
-    const grantedCIDs = snapshot.docs.map(doc => decodeURIComponent(doc.id));
+    // **CORRECTION** : On n'a plus besoin de décoder, on prend l'ID tel quel.
+    const grantedCIDs = snapshot.docs.map(doc => doc.id);
+    
     res.status(200).json(grantedCIDs);
 
   } catch (error) {
@@ -70,22 +72,22 @@ exports.getNext10Tokens = async (req, res) => {
   }
 
   try {
-    // **CORRECTION IMPORTANTE : VÉRIFICATION DES PERMISSIONS**
-    const encodedCidForPermission = encodeURIComponent(String(cid).trim().replace(/\//g, "_"));
-    const userPermissionDocRef = firestore.collection('utilisateurs').doc(encodedCidForPermission);
+    // **CORRECTION** : On utilise le CID brut comme ID de document.
+    const docId = String(cid).trim();
+
+    // On vérifie les permissions avec l'ID brut
+    const userPermissionDocRef = firestore.collection('utilisateurs').doc(docId);
     const userPermissionDoc = await userPermissionDocRef.get();
 
-    // On vérifie si le document existe ET si l'utilisateur est dans le tableau
     if (!userPermissionDoc.exists || !userPermissionDoc.data().authorizedUsers.includes(userEmail)) {
       await logRequest(userEmail, cid, "access DENIED");
       return res.status(403).send("Accès refusé : permission non accordée pour ce CID.");
     }
-    // **FIN DE LA CORRECTION**
     
     await logRequest(userEmail, cid, "access granted");
 
-    const encodedCidForAccount = encodeURIComponent(String(cid).trim().replace(/\//g, "_"));
-    const accountDoc = await firestore.collection('comptes').doc(encodedCidForAccount).get();
+    // On cherche le compte avec l'ID brut
+    const accountDoc = await firestore.collection('comptes').doc(docId).get();
 
     if (!accountDoc.exists) {
       return res.status(404).send(`Secret introuvable pour le CID ${cid}.`);
