@@ -120,16 +120,25 @@ exports.getNext10Tokens = async (req, res) => {
 };
 
 /**
- * Fonction interne pour logger les requêtes.
+ * Fonction interne pour logger les requêtes avec un ID basé sur la date.
  */
 async function logRequest(userEmail, cidEmail, status) {
   try {
-    await firestore.collection('logs').add({
+    // Crée un ID de document unique et triable par ordre chronologique
+    // Format : 2025-10-17T12:30:05.123Z_a1b2c3
+    const docId = new Date().toISOString() + '_' + Math.random().toString(36).substring(2, 8);
+
+    const logData = {
       user: userEmail,
       account: cidEmail,
       message: status,
-      date: FieldValue.serverTimestamp()
-    });
+      // La date est maintenant aussi un champ pour les requêtes, mais l'ID sert au tri
+      date: FieldValue.serverTimestamp() 
+    };
+    
+    // On utilise .doc(docId).set() au lieu de .add()
+    await firestore.collection('logs').doc(docId).set(logData);
+
   } catch(error) {
       console.error("Échec de l'écriture du log :", error);
   }

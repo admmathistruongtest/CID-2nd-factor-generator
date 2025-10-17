@@ -82,14 +82,6 @@ async function loadUserCids() {
         
         const cids = await response.json();
         renderCidList(cids);
-        
-        // --- NOUVEAU : Charger TOUS les tokens après avoir rendu la liste ---
-        // On n'attend pas toutes les requêtes pour ne pas bloquer l'UI
-        // mais on les lance toutes en parallèle.
-        cids.forEach(cid => {
-            fetchAndDisplayTokens(cid);
-        });
-        // ------------------------------------------------------------------
 
     } catch (error) {
         console.error("Erreur de chargement des CIDs:", error);
@@ -153,6 +145,10 @@ async function fetchAndDisplayTokens(cidAccount) {
     // because we want to initiate the fetch, and the setInterval will handle updates.
     // If it's already in loadedCIDS, it just means we're fetching it again
     // which shouldn't happen right after load. The setInterval will keep running.
+
+    if (loadedCIDS[cidAccount]) {
+        return;
+    }
 
     const tokenContainer = document.getElementById(cidAccount);
     const counterDisplay = tokenContainer.querySelector('.displayCounter');
@@ -322,7 +318,7 @@ function initializeUI() {
                 closeToken(email);
                 } else {
                     openToken(email);
-                    updateTokenDisplay(email); 
+                    fetchAndDisplayTokens(email);
                 }
                 return; // Évite de continuer si c'est le bouton "Show/Hide code"
             }
@@ -376,7 +372,7 @@ class ProgressRing extends HTMLElement {
             <style>
                 circle {
                     transition: stroke-dashoffset 0.35s;
-                    transform: rotate(-90deg);
+                    transform: rotate(-90deg) scaleX(1);
                     transform-origin: 50% 50%;
                 }
             </style>
