@@ -1,205 +1,660 @@
-:root{
-      --bg:#f6f7f9;
-      --bg-accent: radial-gradient(1200px 600px at 20% -10%, rgba(47,111,237,.10), transparent 60%),
-                   radial-gradient(900px 500px at 120% 0%, rgba(47,111,237,.07), transparent 60%);
-      --card:#ffffff; --text:#1f2937; --muted:#6b7280;
-      --primary:#2f6fed; --ring:rgba(47,111,237,.25);
-      --radius:16px; --shadow:0 6px 22px rgba(0,0,0,.06);
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; color:var(--text);
-      font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      background: var(--bg);
-      background-image: var(--bg-accent);
-      background-attachment: fixed;
-    }
+/* ======================================================= */
+/* === VARIABLES & STYLES GLOBAUX === */
+/* ======================================================= */
+:root {
+    --bg: #f6f7f9;
+    --bg-accent: radial-gradient(1200px 600px at 20% -10%, rgba(47,111,237,.10), transparent 60%),
+                 radial-gradient(900px 500px at 120% 0%, rgba(47,111,237,.07), transparent 60%);
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --primary: #2f6fed;
+    --ring: rgba(47,111,237,.25);
+    --radius: 16px;
+    --shadow: 0 6px 15px rgba(0,0,0,0.05);
+    --border-light: #eef2f7;
+    --border-medium: #e5e7eb;
+    --bg-subtle: #f9fafb;
+    --text-dark: #111827;
+    --text-medium: #374151;
+    --text-light: #64748b;
+    --red-light: #fef2f2;
+    --red-medium: #fecaca;
+    --red-dark: #b91c1c;
+    --red-error: #ef4444;
+    --green-success: #28a745;
+    --gray-bg: #f1f3f7;
+    --gray-hover: #e5e7eb;
+    --gray-border: #d1d5db;
+}
 
+* {
+    box-sizing: border-box;
+}
 
-    header.top{
-      position:sticky; top:0; z-index:10; background:var(--card);
-      padding:12px 16px; box-shadow:0 1px 0 rgba(0,0,0,.06);
-      display:flex; align-items:center; gap:12px;
-    }
-    h1{margin:0; font-size:22px; letter-spacing:.2px}
-    .grow{flex:1}
-    .toolbar{
-      display:flex; gap:10px; align-items:center;
-      background:#f1f3f7; padding:6px 10px; border-radius:999px; border:1px solid transparent;
-    }
-    .toolbar:focus-within{background:#fff; box-shadow:0 0 0 4px var(--ring)}
-    .toolbar input{border:none; outline:none; background:transparent; font-size:14px; width:220px;}
-    .btn{
-      border:none; background:var(--primary); color:#fff; padding:8px 12px; border-radius:10px; font-weight:600; cursor:pointer;
-      display:inline-flex; align-items:center; gap:6px; box-shadow:0 6px 14px rgba(47,111,237,.18);
-    }
-    .btn.ghost{background:#fff; color:#374151; border:1px solid #e5e7eb; box-shadow:none;}
+html, body {
+    height: 100%;
+}
 
-    .wrap{max-width:1280px; margin:22px auto; padding:0 16px;}
-    body.zoom .wrap{max-width:1440px;}
-    .card{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); padding:10px;}
+body {
+    margin: 0;
+    color: var(--text);
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-accent);
+    background-attachment: fixed;
+    font-size: 16px;
+    line-height: 1.5;
+}
 
-    ul{
-      margin:0; padding:10px; list-style:none;
-      display:grid; gap:14px;
-      grid-template-columns: repeat(auto-fit, minmax(380px, 540px));
-      justify-content: center;        /* centre même avec 1 seule carte */
-    }
+h1, h2, h4 {
+    margin: 0;
+    font-weight: 600;
+}
+h1 { font-size: 1.4em; letter-spacing: .2px; }
+h2 { font-size: 1.2em; }
+h4 { font-size: 1em; }
 
-    /* Carte */
-    li.cidElement{
-      border:1px solid #eef2f7; border-radius:14px; overflow:hidden; background:#fff;
-      display:block;
-    }
-    .title{
-      padding:12px 14px; font-weight:600; background:#f8fafc;
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-    }
-    .title::before{
-      content:"mail"; font-family:"Material Symbols Outlined";
-      font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;
-      font-size:18px; color:#64748b; margin-right:6px;
-    }
-    .title .label{
-      display:flex; align-items:center; gap:8px; overflow:hidden;
-      text-overflow:ellipsis; white-space:nowrap;
-    }
-    .btn.tiny{
-      border:none; background:#111827; color:#fff; cursor:pointer; font-weight:600;
-      padding:8px 10px; border-radius:10px; font-size:13px; line-height:1;
-    }
-    .btn.tiny[aria-expanded="true"]{ background:#e5e7eb; color:#111827; }
+ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
 
-    /* MODIFIEZ CETTE RÈGLE EXISTANTE */
-    .token {
-      /* Ajouté pour le positionnement du bouton */
-      position: relative; 
-      
-      display: flex;
-      /* Changé pour centrer le contenu principal */
-      justify-content: center; 
-      align-items: center;
-      
-      /* Le reste ne change pas */
-      padding: 0 14px;
-      background: #0b1220;
-      overflow: hidden;
-      height: 0;
-      transition: height .25s ease;
-      border-top: 1px solid #0b1220;
-    }
+input[type="search"], input[type="email"] {
+    border: 1px solid var(--gray-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    background-color: var(--card);
+}
+input[type="search"]:focus, input[type="email"]:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--ring);
+}
 
-    /* AJOUTEZ CES NOUVELLES RÈGLES */
-    .token-content {
-      display: flex;
-      align-items: center;
-    }
+/* ======================================================= */
+/* === HEADER COMMUN === */
+/* ======================================================= */
+header.top {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--card);
+    padding: 12px 20px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
 
-    .token .copy-btn {
-      position: absolute; /* Sort le bouton du flux normal */
-      right: 14px; /* Le colle à droite (aligné avec le padding) */
-      top: 50%; /* Le centre verticalement */
-      transform: translateY(-50%); /* Ajustement fin du centrage vertical */
-    }
+.grow {
+    flex: 1;
+}
 
-    .btn.copy-btn.copied {
-      background-color: #28a745;
-      color: white;
-    }
+/* --- Barre de recherche --- */
+.toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    background: var(--gray-bg);
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+.toolbar:focus-within {
+    background: var(--card);
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--ring);
+}
+.toolbar .material-symbols-outlined {
+    color: var(--text-light);
+}
+.toolbar input[type="search"] {
+    border: none;
+    outline: none;
+    background: transparent;
+    padding: 0;
+    font-size: 14px;
+    width: 220px;
+}
+.toolbar input[type="search"]::placeholder {
+    color: var(--muted);
+}
 
-    .displayCounter{
-      display:inline-block; color:#c6e1ff;
-      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-      font-size:28px; letter-spacing:2px; vertical-align:middle;
-      padding:12px 0; min-width:7ch;
-    }
-    .wheel{vertical-align:middle;}
-    .note{padding:8px 12px; color:var(--muted); font-size:12px; text-align:center}
-    
-    #auth-container { max-width: 400px; margin: 5em auto; text-align: center; padding: 2em; border: 1px solid #ddd; border-radius: 8px; }
-    .g_id_signin { display: inline-block; }
-    #app-container { display: none; } /* Caché par défaut */
+/* --- Profil Utilisateur & Déconnexion --- */
+.user-profile-container {
+    position: relative;
+}
+.user-profile-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--gray-bg);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 4px 12px 4px 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.user-profile-btn:hover,
+.user-profile-btn:focus-within {
+    background-color: var(--gray-hover);
+}
+.user-profile-btn img {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: #ccc;
+    border: 1px solid var(--border-medium);
+}
+.user-profile-btn .user-email {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-medium);
+}
+.logout-dropdown {
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    background-color: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-light);
+    padding: 8px;
+    width: max-content;
+    min-width: 180px;
+    z-index: 20;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+.logout-dropdown.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition-delay: 0s;
+}
+#logout-btn {
+    width: 100%;
+    background: var(--red-light);
+    color: var(--red-dark);
+    border: none;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.2s;
+}
+#logout-btn:hover {
+    background: var(--red-medium);
+}
+#logout-btn .material-symbols-outlined {
+    font-size: 18px;
+}
 
-    /* Conteneur principal du profil */
-    .user-profile-container {
-        position: relative; /* Référence pour le positionnement du menu déroulant */
-    }
+/* ======================================================= */
+/* === BOUTONS GÉNÉRIQUES === */
+/* ======================================================= */
+.btn {
+    border: none;
+    background: var(--primary);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 4px 10px rgba(47,111,237,.15);
+    transition: background-color 0.2s, box-shadow 0.2s;
+    font-size: 14px;
+}
+.btn:hover {
+    background-color: #1c5cdc;
+    box-shadow: 0 6px 14px rgba(47,111,237,.20);
+}
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+.btn.ghost {
+    background: var(--card);
+    color: var(--text-medium);
+    border: 1px solid var(--border-medium);
+    box-shadow: none;
+}
+.btn.ghost:hover {
+    background: var(--bg-subtle);
+    border-color: var(--gray-border);
+}
+.btn.tiny {
+    background: var(--text-dark);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1;
+    box-shadow: none;
+}
+.btn.tiny.ghost {
+    background-color: var(--gray-bg) !important;
+    color: var(--text-medium) !important;
+    border: 1px solid var(--border-medium) !important;
+}
+.btn.tiny.ghost:hover {
+     background-color: var(--gray-hover) !important;
+}
+.btn.tiny[aria-expanded="true"] {
+    background: var(--gray-hover);
+    color: var(--text-dark);
+}
+.btn.copy-btn.copied {
+    background-color: var(--green-success);
+    color: white;
+}
+.revoke-btn {
+    background-color: var(--red-light) !important;
+    color: var(--red-error) !important;
+    border: 1px solid var(--red-medium) !important;
+    box-shadow: none !important;
+}
+.revoke-btn:hover {
+    background-color: var(--red-medium) !important;
+}
+.remove-manager-btn {
+    background-color: var(--red-light) !important;
+    color: var(--red-error) !important;
+    border: 1px solid var(--red-medium) !important;
+    box-shadow: none !important;
+}
+.remove-manager-btn:hover {
+     background-color: var(--red-medium) !important;
+}
 
-    /* Bouton affichant les infos utilisateur */
-    .user-profile-btn {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background-color: #f1f3f7;
-      border: 1px solid transparent;
-      border-radius: 999px;
-      padding: 4px 12px 4px 4px; /* Un peu plus d'espace à droite pour le texte */
-      cursor: pointer;
-      transition: background-color 0.2s;
-    }
+/* ======================================================= */
+/* === PAGE PRINCIPALE (index.html) === */
+/* ======================================================= */
+.wrap {
+    max-width: 1280px;
+    margin: 30px auto;
+    padding: 0 20px;
+}
+.card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+.note {
+    padding: 15px 20px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    border-top: 1px solid var(--border-light);
+}
 
-    .user-profile-btn:hover,
-    .user-profile-btn:focus-within {
-      background-color: #e5e7eb;
-    }
+/* --- Liste des CIDs (Grille) --- */
+#cid-list {
+    padding: 20px;
+    display: grid;
+    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    justify-content: center;
+}
+li.cidElement {
+    border: 1px solid var(--border-light);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+    display: block;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+.title {
+    padding: 12px 16px;
+    font-weight: 600;
+    background: var(--bg-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border-light);
+}
+.title::before {
+    content: "mail";
+    font-family: "Material Symbols Outlined";
+    font-variation-settings: 'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 20;
+    font-size: 20px;
+    color: var(--text-light);
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+.title .label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-medium);
+}
 
-    /* Avatar de l'utilisateur */
-    .user-profile-btn img {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background-color: #ccc; /* Couleur de fond si l'image ne charge pas */
-    }
+/* --- Panneau Token --- */
+.token {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    padding: 0 60px;
+    background: var(--text-dark);
+    overflow: hidden;
+    height: 0;
+    transition: height 0.25s ease;
+    border-top: 1px solid var(--text-dark);
+}
+.token-content {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+.displayCounter {
+    display: inline-block;
+    color: #c6e1ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 28px;
+    letter-spacing: 2px;
+    vertical-align: middle;
+    padding: 15px 0;
+    min-width: 7ch;
+    text-align: center;
+}
+.wheel {
+    vertical-align: middle;
+}
+.token .copy-btn {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+}
 
-    /* Email de l'utilisateur */
-    .user-profile-btn .user-email {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text);
-    }
+/* ======================================================= */
+/* === ÉCRAN D'AUTHENTIFICATION (Commun) === */
+/* ======================================================= */
+#auth-container {
+    max-width: 400px;
+    margin: 5em auto;
+    text-align: center;
+    padding: 2em;
+    background: var(--card);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+#auth-container h2 { margin-bottom: 0.5em; }
+#auth-container p { margin-bottom: 1.5em; color: var(--muted); }
+.g_id_signin {
+    display: inline-block;
+}
 
-    /* Menu déroulant pour la déconnexion */
-    .logout-dropdown {
-      position: absolute;
-      top: 110%; /* Juste en dessous du bouton */
-      right: 0;
-      background-color: var(--card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      border: 1px solid #eef2f7;
-      padding: 8px;
-      width: 160px; /* Largeur fixe */
-      z-index: 20;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-10px);
-      transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
-    }
+/* ======================================================= */
+/* === PANNEAUX ADMIN & MANAGER (admin.html, manage.html) === */
+/* ======================================================= */
+#admin-panel .wrap, #manage-panel .wrap {
+    max-width: 900px;
+}
+#admin-panel .card, #manage-panel .card {
+    padding: 0;
+    margin-bottom: 30px;
+}
+#admin-panel .card h2, #manage-panel .card h2 {
+    padding: 15px 25px;
+    margin: 0;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 1.15em;
+}
 
-    /* Classe pour afficher le menu */
-    .logout-dropdown.visible {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0);
-    }
+/* --- Liste des Permissions/CIDs (Admin/Manager) --- */
+#permissions-list, #managed-cids-list {
+    padding: 0;
+}
 
-    /* Bouton de déconnexion */
-    #logout-btn {
-      width: 100%;
-      background: #fee2e2;
-      color: #b91c1c;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 10px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: left;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+/* ======================================================= */
+/* === ACCORDION & TABS (Admin/Manager Panels) === */
+/* ======================================================= */
 
-    #logout-btn:hover {
-      background: #fecaca;
-    }
+/* --- Accordion Item --- */
+.cid-item {
+    border: 1px solid var(--border-medium);
+    border-radius: 12px;
+    margin-bottom: 15px;
+    background-color: var(--card);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+    position: relative; /* Pour l'overlay */
+}
+
+/* --- Header Cliquable --- */
+.cid-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    cursor: pointer;
+    background-color: transparent;
+    border-radius: 12px;
+    transition: background-color 0.2s ease, border-radius 0s linear 0.2s;
+}
+.cid-item.expanded .cid-header {
+    background-color: var(--bg-subtle);
+    border-bottom: 1px solid var(--border-light);
+    border-radius: 12px 12px 0 0;
+    transition-delay: 0s;
+}
+.cid-header .cid-name {
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text-medium);
+    font-size: 1.1em; /* Taille ajustée */
+}
+.cid-header .expand-icon::before {
+    content: 'expand_more';
+    font-family: 'Material Symbols Outlined';
+    font-size: 24px;
+    color: var(--muted);
+    transition: transform 0.2s ease-in-out;
+    display: inline-block;
+}
+.cid-item.expanded .cid-header .expand-icon::before {
+    transform: rotate(180deg);
+}
+
+/* --- Contenu Dépliable --- */
+.cid-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+.cid-item.expanded .cid-content {
+    max-height: 1000px; /* Assez grand pour tout contenu */
+    transition: max-height 0.4s ease-in;
+}
+
+/* --- Onglets (Tabs) --- */
+.tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-light);
+    background-color: var(--bg-subtle);
+}
+.tabs button.tab-button { /* Ciblage plus spécifique */
+    flex: 1;
+    padding: 12px 15px;
+    border: none;
+    background-color: transparent;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 14px;
+    border-bottom: 3px solid transparent;
+    transition: color 0.2s ease, border-color 0.2s ease;
+}
+.tabs button.tab-button:hover {
+    color: var(--text-medium);
+}
+.tabs button.tab-button.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+/* --- Panneaux des Onglets --- */
+.tab-panel {
+    padding: 20px 25px; /* Padding interne ajusté */
+    display: none;
+}
+.tab-panel.active {
+    display: block;
+}
+
+/* --- Sections (Managers & Users) dans les Tabs --- */
+.permission-section {
+     margin-bottom: 20px;
+}
+.permission-section:last-of-type { margin-bottom: 0;}
+.permission-section h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+    color: var(--text-medium);
+    font-weight: 600;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-light); /* Ligne légère sous le titre */
+    display: block;
+}
+
+/* --- Listes (Managers & Users) dans les Tabs --- */
+.user-list, .manager-list {
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+.user-list li, .manager-list li {
+     padding: 8px 0;
+     border-bottom: 1px solid var(--border-light); /* Séparateur plus visible */
+     display: flex; /* Assure l'alignement */
+     justify-content: space-between;
+     align-items: center;
+}
+.user-list li:last-child, .manager-list li:last-child {
+    border-bottom: none;
+}
+.user-list li span, .manager-list li span {
+    color: var(--text);
+    word-break: break-all;
+    padding-right: 10px;
+}
+.user-list li:only-child, .manager-list li:only-child {
+    color: var(--muted);
+    font-style: italic;
+    border-bottom: none;
+    padding: 5px 0;
+}
+
+/* --- Formulaires (Accorder/Désigner) dans les Tabs --- */
+.grant-form {
+    margin-top: 15px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.grant-form input[type="email"] { /* Style unique pour tous les inputs email dans ces formulaires */
+    flex-grow: 1;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+.grant-form button {
+    flex-shrink: 0;
+}
+.grant-form.manager button {
+    background-color: var(--bg-subtle) !important;
+    color: var(--text-medium) !important;
+    border: 1px solid var(--border-medium) !important;
+}
+.grant-form.manager button:hover {
+     background-color: var(--gray-hover) !important;
+}
+
+/* --- Autocomplete --- */
+.autocomplete-container {
+    position: relative;
+    flex-grow: 1;
+}
+.suggestions-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--card);
+    border: 1px solid var(--gray-border);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 150px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+.suggestions-list li {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-light);
+    display: block;
+}
+.suggestions-list li:last-child {
+    border-bottom: none;
+}
+.suggestions-list li:hover {
+    background-color: var(--bg-subtle);
+}
+
+/* --- Overlay de Chargement --- */
+.card-loading-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+    border-radius: 12px; /* Correspond à .cid-item */
+}
+.card-loading-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s;
+}
+.card-loading-overlay::after {
+    content: '';
+    display: block;
+    width: 30px;
+    height: 30px;
+    border: 4px solid var(--primary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
