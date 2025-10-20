@@ -5,7 +5,7 @@
 // ===============================================
 const BASE_URL = "https://europe-west1-monkey-face-al.cloudfunctions.net";
 
-// URLs des fonctions Cloud
+// URLs des fonctions Cloud (Admin)
 const ADMIN_GRANT_ACCESS_URL = `${BASE_URL}/adminGrantAccess`;
 const ADMIN_REVOKE_ACCESS_URL = `${BASE_URL}/adminRevokeAccess`;
 const ADMIN_GET_ALL_PERMISSIONS_URL = `${BASE_URL}/adminGetAllPermissions`;
@@ -16,103 +16,105 @@ const ADMIN_REMOVE_MANAGER_URL = `${BASE_URL}/adminRemoveManager`;
 // État de l'application
 let idToken = null;
 let userInfo = null;
-let knownUsers = [];
+let knownUsers = []; // Pour l'autocomplete
 
 // ===============================================
 // === AUTHENTIFICATION & FONCTIONS UTILITAIRES
 // ===============================================
 
+/**
+ * Décode le token JWT pour obtenir les informations de l'utilisateur.
+ */
 function parseJwt(token) {
     try {
         const base64Url = token.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
         return JSON.parse(atob(base64));
-    } catch (e) {
-        console.error("Impossible de décoder le JWT", e);
-        return null;
-    }
+    } catch (e) { console.error("Impossible de décoder le JWT", e); return null; }
 }
 
+/**
+ * Met à jour l'interface avec les informations de l'utilisateur connecté.
+ */
 function updateUserInfoUI() {
     if (!userInfo) return;
-    document.getElementById('user-avatar').src = userInfo.picture || '';
-    document.getElementById('user-email').textContent = userInfo.email;
+    const avatar = document.getElementById('user-avatar');
+    const emailSpan = document.getElementById('user-email');
+    if (avatar) avatar.src = userInfo.picture || '';
+    if (emailSpan) emailSpan.textContent = userInfo.email;
 }
 
+/**
+ * Gère la déconnexion de l'utilisateur.
+ */
 function signOut() {
     google.accounts.id.disableAutoSelect();
     window.location.reload();
 }
 
+/**
+ * Fonction appelée par Google après une connexion réussie. Point d'entrée principal.
+ */
 async function handleCredentialResponse(response) {
     idToken = response.credential;
     userInfo = parseJwt(idToken);
-
     if (!idToken || !userInfo) {
         alert("Erreur: Impossible de vérifier les informations de l'utilisateur.");
         return;
     }
-
     document.getElementById('auth-container').style.display = 'none';
     document.getElementById('admin-panel').style.display = 'block';
-
     updateUserInfoUI();
-    initializeUIEventListeners();
-
+    initializeUIEventListeners(); // Attache tous les écouteurs d'événements
     try {
         // Charge les permissions et les utilisateurs connus en parallèle
         await Promise.all([
             loadPermissions(),
             loadKnownUsers()
         ]);
-    } catch (error) {
-        console.error("Erreur lors du chargement des données initiales:", error);
-    }
+        // Note: fetchAndRenderLogs a été retiré
+    } catch (error) { console.error("Erreur lors du chargement des données initiales:", error); }
 }
 
 // ===============================================
 // === CHARGEMENT DES DONNÉES (FETCH)
 // ===============================================
 
+/**
+ * Charge la liste des utilisateurs connus depuis le backend pour l'autocomplete.
+ */
 async function loadKnownUsers() {
     try {
-        const response = await fetch(ADMIN_GET_KNOWN_USERS_URL, {
-            headers: { 'Authorization': `Bearer ${idToken}` }
-        });
+        const response = await fetch(ADMIN_GET_KNOWN_USERS_URL, { headers: { 'Authorization': `Bearer ${idToken}` } });
         if (!response.ok) throw new Error('Impossible de charger les utilisateurs connus.');
         knownUsers = await response.json();
         console.log("Utilisateurs connus chargés:", knownUsers.length);
-    } catch (error) {
-        console.error("Erreur lors du chargement des utilisateurs connus:", error);
-        knownUsers = [];
-    }
+    } catch (error) { console.error("Erreur chargement utilisateurs connus:", error); knownUsers = []; }
 }
 
+/**
+ * Charge et affiche la liste de toutes les permissions depuis le backend.
+ */
 async function loadPermissions() {
     const listContainer = document.getElementById('permissions-list');
-    listContainer.innerHTML = '<p>Chargement des permissions...</p>';
-
+    listContainer.innerHTML = '<p>Chargement des permissions...</p>'; // Indicateur global
     try {
-        const response = await fetch(ADMIN_GET_ALL_PERMISSIONS_URL, {
-            method: 'GET',
-            headers: { 'Authorization': `Bearer ${idToken}` }
-        });
+        const response = await fetch(ADMIN_GET_ALL_PERMISSIONS_URL, { method: 'GET', headers: { 'Authorization': `Bearer ${idToken}` } });
         if (!response.ok) throw new Error(`Erreur serveur : ${await response.text()}`);
         const permissions = await response.json();
-        renderPermissions(permissions);
+        renderPermissions(permissions); // Appelle la fonction de rendu
     } catch (error) {
-        console.error("Erreur lors du chargement des permissions:", error);
+        console.error("Erreur chargement permissions:", error);
         listContainer.innerHTML = '<p style="color: red;">Impossible de charger les permissions.</p>';
     }
 }
-
 
 // ===============================================
 // === RENDU HTML (Génération de l'interface)
 // ===============================================
 
 /**
- * Génère le HTML pour la liste des permissions (VERSION Accordéon + Tabs).
+ * Génère le HTML pour la liste des permissions (Accordion + Tabs + Search + Forms Top - Corrigé).
  */
 function renderPermissions(permissions) {
     const listContainer = document.getElementById('permissions-list');
@@ -120,107 +122,93 @@ function renderPermissions(permissions) {
         listContainer.innerHTML = '<p>Aucun CID n\'a été trouvé.</p>';
         return;
     }
-
     permissions.sort((a, b) => a.cid.localeCompare(b.cid));
     listContainer.innerHTML = permissions.map(perm => {
         const cidSafeId = perm.cid.replace(/[^a-zA-Z0-9]/g, ''); // ID sûr pour HTML
-
         return `
-        <div class="cid-item" data-cid="${perm.cid}">
+        <div class="cid-item" data-cid-name="${perm.cid.toLowerCase()}">
             <div class="card-loading-overlay"></div>
-
             <div class="cid-header">
                 <strong class="cid-name">${perm.cid}</strong>
                 <span class="expand-icon"></span>
             </div>
-
             <div class="cid-content">
                 <div class="tabs">
                     <button class="tab-button active" data-tab="managers-${cidSafeId}">Managers</button>
                     <button class="tab-button" data-tab="users-${cidSafeId}">Utilisateurs</button>
                 </div>
-
                 <div id="managers-${cidSafeId}" class="tab-panel active">
                     <div class="permission-section">
-                        <h4>Managers Désignés :</h4>
-                        <ul class="manager-list">
-                            ${perm.managers && perm.managers.length > 0 ?
-                                perm.managers.map(manager => `
-                                    <li>
-                                        <span>${manager}</span>
-                                        <button class="btn tiny ghost remove-manager-btn" data-cid="${perm.cid}" data-manager="${manager}">Retirer</button>
-                                    </li>`).join('')
-                                : '<li>Aucun manager désigné.</li>'
-                            }
-                        </ul>
-                        <form class="grant-form manager" data-cid="${perm.cid}">
+                        <input type="search" class="filter-list-input manager-filter" placeholder="Filtrer managers..." style="width: 100%; margin-bottom: 15px;">
+                        <form class="grant-form manager" data-cid="${perm.cid}" style="margin-bottom: 20px;">
                             <div class="autocomplete-container">
                                 <input type="email" class="grant-manager-input" placeholder="Ajouter un manager..." required autocomplete="off">
                                 <ul class="suggestions-list"></ul>
                             </div>
                             <button type="submit" class="btn tiny ghost">Désigner Manager</button>
                         </form>
-                    </div>
-                </div>
-
-                <div id="users-${cidSafeId}" class="tab-panel">
-                    <div class="permission-section">
-                        <h4>Utilisateurs Autorisés :</h4>
-                        <ul class="user-list">
-                            ${perm.authorizedUsers && perm.authorizedUsers.length > 0 ?
-                                perm.authorizedUsers.map(user => `
-                                    <li>
-                                        <span>${user}</span>
-                                        <button class="btn tiny revoke-btn" data-cid="${perm.cid}" data-user="${user}">Révoquer</button>
-                                    </li>`).join('')
-                                : '<li>Aucun utilisateur autorisé.</li>'
+                        <h4>Managers Désignés :</h4>
+                        <ul class="manager-list">
+                            ${perm.managers && perm.managers.length > 0 ?
+                                perm.managers.map(manager => `<li><span>${manager}</span><button class="btn tiny ghost remove-manager-btn" data-cid="${perm.cid}" data-manager="${manager}">Retirer</button></li>`).join('')
+                                : '<li>Aucun manager désigné.</li>'
                             }
                         </ul>
-                        <form class="grant-form user" data-cid="${perm.cid}">
+                    </div>
+                </div>
+                <div id="users-${cidSafeId}" class="tab-panel">
+                    <div class="permission-section">
+                        <input type="search" class="filter-list-input user-filter" placeholder="Filtrer utilisateurs..." style="width: 100%; margin-bottom: 15px;">
+                         <form class="grant-form user" data-cid="${perm.cid}" style="margin-bottom: 20px;">
                             <div class="autocomplete-container">
                                 <input type="email" class="grant-user-input" placeholder="Ajouter un utilisateur..." required autocomplete="off">
                                 <ul class="suggestions-list"></ul>
                             </div>
                             <button type="submit" class="btn tiny">Accorder</button>
                         </form>
+                        <h4>Utilisateurs Autorisés :</h4>
+                        <ul class="user-list">
+                            ${perm.authorizedUsers && perm.authorizedUsers.length > 0 ?
+                                perm.authorizedUsers.map(user => `<li><span>${user}</span><button class="btn tiny revoke-btn" data-cid="${perm.cid}" data-user="${user}">Révoquer</button></li>`).join('')
+                                : '<li>Aucun utilisateur autorisé.</li>'
+                            }
+                        </ul>
                     </div>
                 </div>
             </div>
         </div>
     `}).join('');
-
+    // Ré-attache les listeners d'autocomplete après chaque rendu complet
     attachAutocompleteListeners('.grant-user-input');
     attachAutocompleteListeners('.grant-manager-input');
 }
-
 
 /**
  * Attache les écouteurs d'événements pour l'autocomplete.
  */
 function attachAutocompleteListeners(inputSelector) {
     document.querySelectorAll(inputSelector).forEach(input => {
-        const suggestionsList = input.parentElement.querySelector('.suggestions-list');
+        const suggestionsList = input.parentElement?.querySelector('.suggestions-list'); // Recherche dans le parent direct
         if (!suggestionsList) return;
 
         input.addEventListener('input', () => {
             const query = input.value.toLowerCase();
-            suggestionsList.innerHTML = '';
-            suggestionsList.style.display = 'none';
-            if (query.length < 2 || knownUsers.length === 0) return;
+            suggestionsList.innerHTML = ''; suggestionsList.style.display = 'none';
+            if (query.length < 2 || !Array.isArray(knownUsers) || knownUsers.length === 0) return; // Vérifie aussi knownUsers
             const filteredUsers = knownUsers.filter(user => user.toLowerCase().includes(query));
             if (filteredUsers.length > 0) {
-                filteredUsers.slice(0, 5).forEach(user => {
-                    const li = document.createElement('li');
-                    li.textContent = user;
-                    li.addEventListener('mousedown', (e) => {
+                filteredUsers.slice(0, 5).forEach(user => { // Limite à 5 suggestions
+                    const li = document.createElement('li'); li.textContent = user;
+                    li.addEventListener('mousedown', (e) => { // mousedown est mieux pour éviter conflit avec blur
                         e.preventDefault(); input.value = user; suggestionsList.style.display = 'none';
                     });
                     suggestionsList.appendChild(li);
                 });
-                suggestionsList.style.display = 'block';
+                suggestionsList.style.display = 'block'; // Affiche la liste
             }
         });
-        input.addEventListener('blur', () => { setTimeout(() => { suggestionsList.style.display = 'none'; }, 150); });
+        // Cache la liste quand l'input perd le focus
+        input.addEventListener('blur', () => { setTimeout(() => { suggestionsList.style.display = 'none'; }, 150); }); // Délai pour permettre le clic
     });
 }
 
@@ -229,21 +217,32 @@ function attachAutocompleteListeners(inputSelector) {
 // ===============================================
 
 /**
- * Initialise TOUS les écouteurs d'événements de l'interface après la connexion.
+ * Initialise TOUS les écouteurs d'événements après la connexion.
  */
 function initializeUIEventListeners() {
-    // Menu de profil et déconnexion
-    document.getElementById('user-profile-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation(); document.getElementById('logout-dropdown')?.classList.toggle('visible');
-    });
+    // --- Menu profil & déconnexion ---
+    document.getElementById('user-profile-btn')?.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('logout-dropdown')?.classList.toggle('visible'); });
     document.getElementById('logout-btn')?.addEventListener('click', signOut);
     document.addEventListener('click', () => { document.getElementById('logout-dropdown')?.classList.remove('visible'); });
 
-    // --- Délégation d'événements pour la liste des permissions (Clics) ---
-    const permissionsList = document.getElementById('permissions-list');
-    if (!permissionsList) return; // Quitte si l'élément n'existe pas
+    // --- Recherche globale CID ---
+    const cidSearchInput = document.getElementById('cid-search-input');
+    const listContainer = document.getElementById('permissions-list'); // Conteneur principal
 
-    permissionsList.addEventListener('click', async (e) => {
+    cidSearchInput?.addEventListener('input', (e) => {
+        const searchTerm = e.target.value.toLowerCase().trim();
+        const items = listContainer?.querySelectorAll('.cid-item');
+        items?.forEach(item => {
+            const cidName = item.dataset.cidName || ''; // data-cid-name est déjà en minuscules
+            item.style.display = cidName.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    // --- Délégation pour la liste des CIDs (#permissions-list) ---
+    if (!listContainer) return; // Arrête si le conteneur n'existe pas
+
+    // --- Clics (Accordion, Tabs, Boutons Révoquer/Retirer) ---
+    listContainer.addEventListener('click', async (e) => {
         const header = e.target.closest('.cid-header');
         const tabButton = e.target.closest('.tab-button');
         const revokeButton = e.target.closest('.revoke-btn');
@@ -251,61 +250,66 @@ function initializeUIEventListeners() {
         const card = e.target.closest('.cid-item');
         const overlay = card?.querySelector('.card-loading-overlay');
 
-        // === Clic sur le Header pour déplier/replier ===
-        if (header && card) {
-            card.classList.toggle('expanded');
-            return;
-        }
+        // Accordion
+        if (header && card) { card.classList.toggle('expanded'); return; }
 
-        // === Clic sur un bouton d'onglet ===
+        // Tabs
         if (tabButton && card) {
             const targetTabId = tabButton.dataset.tab;
             card.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
             tabButton.classList.add('active');
-            card.querySelectorAll('.tab-panel').forEach(panel => {
-                panel.classList.toggle('active', panel.id === targetTabId);
-            });
+            card.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === targetTabId));
             return;
         }
 
-        // === Clic sur "Révoquer" utilisateur ===
+        // Révoquer Utilisateur
         if (revokeButton && card && overlay) {
             const { cid, user } = revokeButton.dataset;
-            if (!confirm(`Voulez-vous vraiment révoquer l'accès de ${user} au CID ${cid} ?`)) return;
+            if (!confirm(`Révoquer l'accès de ${user} à ${cid} ?`)) return;
             revokeButton.disabled = true; overlay.classList.add('visible');
             try {
-                const response = await fetch(ADMIN_REVOKE_ACCESS_URL, {
-                    method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, userToRevoke: user })
-                });
+                const response = await fetch(ADMIN_REVOKE_ACCESS_URL, { method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, userToRevoke: user }) });
                 if (!response.ok) throw new Error(await response.text());
-            } catch (error) { alert(`Erreur révocation : ${error.message}`); }
-            finally { revokeButton.disabled = false; overlay.classList.remove('visible'); await loadPermissions(); }
+                // Recharge après succès
+                await loadPermissions();
+            } catch (error) {
+                alert(`Erreur révocation : ${error.message}`);
+                revokeButton.disabled = false; // Réactive en cas d'erreur
+            } finally {
+                 // Cache l'overlay même si le rechargement échoue
+                 overlay.classList.remove('visible'); 
+            }
         }
 
-        // === Clic sur "Retirer Manager" ===
+        // Retirer Manager
         else if (removeManagerButton && card && overlay) {
             const { cid, manager } = removeManagerButton.dataset;
-            if (!confirm(`Voulez-vous vraiment retirer ${manager} comme manager de ${cid} ?`)) return;
+            if (!confirm(`Retirer ${manager} comme manager de ${cid} ?`)) return;
             removeManagerButton.disabled = true; overlay.classList.add('visible');
             try {
-                const response = await fetch(ADMIN_REMOVE_MANAGER_URL, {
-                    method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, managerEmail: manager })
-                });
+                const response = await fetch(ADMIN_REMOVE_MANAGER_URL, { method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, managerEmail: manager }) });
                 if (!response.ok) throw new Error(await response.text());
-            } catch (error) { alert(`Erreur retrait manager : ${error.message}`); }
-            finally { removeManagerButton.disabled = false; overlay.classList.remove('visible'); await loadPermissions(); }
+                 // Recharge après succès
+                await loadPermissions();
+            } catch (error) {
+                 alert(`Erreur retrait manager : ${error.message}`);
+                 removeManagerButton.disabled = false; // Réactive en cas d'erreur
+            } finally {
+                // Cache l'overlay même si le rechargement échoue
+                overlay.classList.remove('visible');
+            }
         }
     });
 
-    // --- Délégation pour les soumissions de formulaire ---
-    permissionsList.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    // --- Soumissions de Formulaires (Accorder/Désigner) ---
+    listContainer.addEventListener('submit', async (e) => {
+        e.preventDefault(); // Empêche soumission standard
         const grantFormUser = e.target.closest('.grant-form.user');
         const grantFormManager = e.target.closest('.grant-form.manager');
         const card = e.target.closest('.cid-item');
         const overlay = card?.querySelector('.card-loading-overlay');
 
-        // === Soumission "Accorder" utilisateur ===
+        // Accorder Utilisateur
         if (grantFormUser && card && overlay) {
             const { cid } = grantFormUser.dataset;
             const input = grantFormUser.querySelector('.grant-user-input');
@@ -314,16 +318,19 @@ function initializeUIEventListeners() {
             if (!userToGrant || !userToGrant.includes('@')) { alert("Email utilisateur invalide."); return; }
             button.disabled = true; overlay.classList.add('visible');
             try {
-                const response = await fetch(ADMIN_GRANT_ACCESS_URL, {
-                     method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, userToGrant })
-                });
+                const response = await fetch(ADMIN_GRANT_ACCESS_URL, { method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, userToGrant }) });
                 if (!response.ok) throw new Error(await response.text());
-                input.value = '';
-            } catch (error) { alert(`Erreur accord accès : ${error.message}`); }
-            finally { button.disabled = false; overlay.classList.remove('visible'); await loadPermissions(); }
+                input.value = ''; // Vide l'input
+                await loadPermissions(); // Recharge après succès
+            } catch (error) {
+                alert(`Erreur accord accès : ${error.message}`);
+                button.disabled = false; // Réactive en cas d'erreur
+            } finally {
+                 overlay.classList.remove('visible'); // Cache l'overlay
+            }
         }
 
-        // === Soumission "Désigner Manager" ===
+        // Désigner Manager
         else if (grantFormManager && card && overlay) {
              const { cid } = grantFormManager.dataset;
              const input = grantFormManager.querySelector('.grant-manager-input');
@@ -332,16 +339,37 @@ function initializeUIEventListeners() {
              if (!managerEmail || !managerEmail.includes('@')) { alert("Email manager invalide."); return; }
              button.disabled = true; overlay.classList.add('visible');
              try {
-                 const response = await fetch(ADMIN_ADD_MANAGER_URL, {
-                     method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, managerEmail })
-                 });
+                 const response = await fetch(ADMIN_ADD_MANAGER_URL, { method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, managerEmail }) });
                  if (!response.ok) throw new Error(await response.text());
-                 input.value = '';
-             } catch (error) { alert(`Erreur ajout manager : ${error.message}`); }
-             finally { button.disabled = false; overlay.classList.remove('visible'); await loadPermissions(); }
+                 input.value = ''; // Vide l'input
+                 await loadPermissions(); // Recharge après succès
+             } catch (error) {
+                 alert(`Erreur ajout manager : ${error.message}`);
+                 button.disabled = false; // Réactive en cas d'erreur
+            } finally {
+                 overlay.classList.remove('visible'); // Cache l'overlay
+             }
         }
     });
 
-    
-}
-
+    // --- Filtres Locaux (dans les tabs) ---
+    listContainer.addEventListener('input', (e) => {
+        const filterInput = e.target.closest('.filter-list-input');
+        if (filterInput) {
+            const searchTerm = filterInput.value.toLowerCase().trim();
+            const tabPanel = filterInput.closest('.tab-panel');
+            const list = tabPanel?.querySelector('.user-list, .manager-list'); // Trouve la bonne liste
+            list?.querySelectorAll('li').forEach(li => {
+                // Ignore le 'li' indiquant une liste vide
+                if (li.children.length === 0 || !li.querySelector('span')) {
+                    li.style.display = ''; // Assure que 'Aucun...' reste visible
+                    return;
+                }
+                const emailSpan = li.querySelector('span');
+                const email = emailSpan?.textContent.toLowerCase() || '';
+                // Cache ou affiche le 'li' basé sur la recherche
+                li.style.display = email.includes(searchTerm) ? 'flex' : 'none'; // 'flex' car les li sont en flex
+            });
+        }
+    });
+} // Fin de initializeUIEventListeners

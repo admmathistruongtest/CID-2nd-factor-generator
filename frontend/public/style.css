@@ -534,7 +534,7 @@ li.cidElement {
     color: var(--text-medium);
     font-weight: 600;
     padding-bottom: 5px;
-    border-bottom: 1px solid var(--border-light); /* Ligne légère sous le titre */
+    border-bottom: none;
     display: block;
 }
 
@@ -565,9 +565,26 @@ li.cidElement {
     padding: 5px 0;
 }
 
+/* --- Filtre Local (dans les tabs) --- */
+.filter-list-input {
+    width: 100%;
+    padding: 8px 12px; /* Pad standard */
+    font-size: 14px;
+    margin-bottom: 20px; /* Espace avant le formulaire "Ajouter" */
+    border-radius: 8px;
+    border: 1px solid var(--gray-border);
+    background-color: var(--card); /* Fond blanc */
+}
+.filter-list-input::placeholder {
+    color: var(--muted);
+}
+
 /* --- Formulaires (Accorder/Désigner) dans les Tabs --- */
 .grant-form {
-    margin-top: 15px;
+    margin-top: 0; /* Pas besoin de marge sup si le filtre est avant */
+    margin-bottom: 25px; /* Espace avant le titre H4 */
+    padding-bottom: 15px; /* Espace sous le formulaire */
+    border-bottom: 1px solid var(--border-light); /* Ligne de séparation */
     display: flex;
     gap: 8px;
     align-items: center;
