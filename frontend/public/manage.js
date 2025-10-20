@@ -9,7 +9,6 @@ const BASE_URL = "https://europe-west1-monkey-face-al.cloudfunctions.net";
 const GET_MANAGED_CIDS_URL = `${BASE_URL}/getManagedCIDsAndUsers`;
 const MANAGER_GRANT_ACCESS_URL = `${BASE_URL}/managerGrantAccess`;
 const MANAGER_REVOKE_ACCESS_URL = `${BASE_URL}/managerRevokeAccess`;
-// Note: Pas d'accès aux fonctions admin depuis l'interface manager
 
 // État de l'application
 let idToken = null;
@@ -57,20 +56,15 @@ async function handleCredentialResponse(response) {
     userInfo = parseJwt(idToken);
     if (!idToken || !userInfo) {
         alert("Erreur: Impossible de vérifier les informations de l'utilisateur.");
-        // Make sure login screen stays visible
-        document.getElementById('auth-container').style.display = 'block';
+        document.getElementById('auth-container').style.display = 'block'; // Assure que l'auth reste visible
         document.getElementById('manage-panel').style.display = 'none';
         return;
     }
-    // Hide login, show panel
     document.getElementById('auth-container').style.display = 'none';
     document.getElementById('manage-panel').style.display = 'block';
-
     updateUserInfoUI();
-    initializeUIEventListeners(); // Attach listeners AFTER panel is visible
-
-    // Load initial data
-    await loadManagedCIDs();
+    initializeUIEventListeners(); // Attache les écouteurs
+    await loadManagedCIDs(); // Charge les données
 }
 
 // ===============================================
@@ -82,20 +76,20 @@ async function handleCredentialResponse(response) {
  */
 async function loadManagedCIDs() {
     const listContainer = document.getElementById('managed-cids-list');
-    if (!listContainer) return; // Safety check
+    if (!listContainer) return;
     listContainer.innerHTML = '<p>Chargement de vos CIDs...</p>';
     try {
         const response = await fetch(GET_MANAGED_CIDS_URL, {
             method: 'GET', headers: { 'Authorization': `Bearer ${idToken}` }
         });
-        // Handle empty list/errors more robustly
         if (response.status === 200) {
             const managedData = await response.json();
-            renderManagedCIDs(managedData); // Pass data to render function
-        } else if (response.status === 403 || response.status === 404) {
-             listContainer.innerHTML = '<p>Vous ne gérez actuellement aucun CID ou une erreur est survenue lors de la vérification.</p>';
+            renderManagedCIDs(managedData); // Passe au rendu
         } else {
-             throw new Error(`Erreur serveur (${response.status}): ${await response.text()}`);
+            // Gère les cas où l'utilisateur ne manage rien ou erreur serveur
+            const errorText = await response.text();
+            console.warn(`Statut ${response.status} lors du chargement des CIDs: ${errorText}`);
+            listContainer.innerHTML = '<p>Vous ne gérez actuellement aucun CID ou une erreur est survenue.</p>';
         }
     } catch (error) {
         console.error("Erreur chargement CIDs gérés:", error);
@@ -108,38 +102,34 @@ async function loadManagedCIDs() {
 // ===============================================
 
 /**
- * Génère le HTML pour la liste des CIDs gérés (Accordion, PAS de tabs, formulaires en haut).
+ * Génère le HTML pour la liste des CIDs gérés (Accordion, PAS de tabs, formulaires et filtres en haut).
  */
 function renderManagedCIDs(managedData) {
     const listContainer = document.getElementById('managed-cids-list');
-    if (!listContainer) return; // Safety check
+    if (!listContainer) return;
 
     if (!managedData || managedData.length === 0) {
         listContainer.innerHTML = '<p>Vous ne gérez actuellement aucun CID.</p>';
         return;
     }
-    managedData.sort((a, b) => a.cid.localeCompare(b.cid));
+    managedData.sort((a, b) => a.cid.localeCompare(b.cid)); // Trie par nom de CID
     listContainer.innerHTML = managedData.map(data => {
-        const cidSafeId = data.cid.replace(/[^a-zA-Z0-9]/g, ''); // Safe ID for HTML elements
+        const cidSafeId = data.cid.replace(/[^a-zA-Z0-9]/g, ''); // ID sûr pour éléments HTML
         return `
-        <div class="cid-item" data-cid-name="${data.cid.toLowerCase()}"> {/* data-cid-name for global search */}
+        <div class="cid-item" data-cid-name="${data.cid.toLowerCase()}">
             <div class="card-loading-overlay"></div>
             <div class="cid-header">
                 <strong class="cid-name">${data.cid}</strong>
                 <span class="expand-icon"></span>
             </div>
             <div class="cid-content">
-                {/* Manager only sees the Users section */}
-                <div id="users-${cidSafeId}" class="tab-panel active"> {/* Use tab-panel class for styling, active by default */}
+                <div id="users-${cidSafeId}" class="tab-panel active">
                     <div class="permission-section">
-                        {/* Grant form moved to the top */}
+                        <input type="search" class="filter-list-input user-filter" placeholder="Filtrer utilisateurs..." style="width: 100%; margin-bottom: 15px;">
                         <form class="grant-form user" data-cid="${data.cid}" style="margin-bottom: 20px;">
-                            {/* No autocomplete for manager for simplicity */}
                             <input type="email" class="grant-user-input" placeholder="Ajouter un utilisateur..." required>
                             <button type="submit" class="btn tiny">Accorder</button>
                         </form>
-                        {/* Local filter input */}
-                        <input type="search" class="filter-list-input" placeholder="Filtrer utilisateurs..." style="width: 100%; margin-bottom: 10px;">
                         <h4>Utilisateurs Autorisés :</h4>
                         <ul class="user-list">
                             ${data.authorizedUsers && data.authorizedUsers.length > 0 ?
@@ -152,7 +142,9 @@ function renderManagedCIDs(managedData) {
             </div>
         </div>
     `}).join('');
+    // Note: Pas d'appel à attachAutocompleteListeners ici
 }
+
 
 // ===============================================
 // === GESTIONNAIRES D'ÉVÉNEMENTS (Listeners)
@@ -163,31 +155,24 @@ function renderManagedCIDs(managedData) {
  */
 function initializeUIEventListeners() {
     // --- Menu profil & déconnexion ---
-    document.getElementById('user-profile-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation(); document.getElementById('logout-dropdown')?.classList.toggle('visible');
-    });
+    document.getElementById('user-profile-btn')?.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('logout-dropdown')?.classList.toggle('visible'); });
     document.getElementById('logout-btn')?.addEventListener('click', signOut);
-    document.addEventListener('click', () => { // Close dropdown on click outside
-        document.getElementById('logout-dropdown')?.classList.remove('visible');
-    });
+    document.addEventListener('click', () => { document.getElementById('logout-dropdown')?.classList.remove('visible'); });
 
     // --- Recherche globale CID ---
-    const cidSearchInput = document.getElementById('cid-search-input'); // Ensure this ID exists in manage.html
-    const listContainer = document.getElementById('managed-cids-list');
+    const cidSearchInput = document.getElementById('cid-search-input');
+    const listContainer = document.getElementById('managed-cids-list'); // Conteneur principal
     cidSearchInput?.addEventListener('input', (e) => {
          const searchTerm = e.target.value.toLowerCase().trim();
          const items = listContainer?.querySelectorAll('.cid-item');
          items?.forEach(item => {
-             const cidName = item.dataset.cidName || '';
+             const cidName = item.dataset.cidName || ''; // data-cid-name est déjà en minuscules
              item.style.display = cidName.includes(searchTerm) ? '' : 'none';
          });
     });
 
-    // --- Délégation pour la liste des CIDs gérés ---
-    if (!listContainer) {
-        console.error("Element #managed-cids-list not found!");
-        return; // Stop if the main container isn't found
-    }
+    // --- Délégation pour la liste des CIDs gérés (#managed-cids-list) ---
+    if (!listContainer) return; // Sécurité
 
     // --- Clics (Accordion, Boutons Révoquer) ---
     listContainer.addEventListener('click', async (e) => {
@@ -199,57 +184,54 @@ function initializeUIEventListeners() {
         // Accordion toggle
         if (header && card) { card.classList.toggle('expanded'); return; }
 
-        // Révoquer Utilisateur (uses MANAGER functions)
+        // Révoquer Utilisateur (utilise les fonctions MANAGER)
         if (revokeButton && card && overlay) {
             const { cid, user } = revokeButton.dataset;
             if (!confirm(`Révoquer l'accès de ${user} à ${cid} ?`)) return;
             revokeButton.disabled = true; overlay.classList.add('visible');
             try {
-                const response = await fetch(MANAGER_REVOKE_ACCESS_URL, { // <<< MANAGER URL
+                const response = await fetch(MANAGER_REVOKE_ACCESS_URL, { // <<< URL MANAGER
                     method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, userToRevoke: user })
                 });
                 if (!response.ok) throw new Error(`Erreur ${response.status}: ${await response.text()}`);
-                // Refresh list only on success
-                await loadManagedCIDs();
+                await loadManagedCIDs(); // Recharge la liste après succès
             } catch (error) {
                 alert(`Erreur révocation : ${error.message}`);
-                revokeButton.disabled = false; // Re-enable button on error
-                overlay.classList.remove('visible'); // Hide overlay on error
+                revokeButton.disabled = false; // Réactive en cas d'erreur
+            } finally {
+                 overlay.classList.remove('visible'); // Cache l'overlay
             }
-            // No finally needed here as loadManagedCIDs refreshes the whole list anyway
         }
     });
 
     // --- Soumissions de Formulaires (Accorder) ---
     listContainer.addEventListener('submit', async (e) => {
-        e.preventDefault(); // Prevent default form submission for ALL forms in the list
+        e.preventDefault();
         const grantFormUser = e.target.closest('.grant-form.user');
         const card = e.target.closest('.cid-item');
         const overlay = card?.querySelector('.card-loading-overlay');
 
-        // Accorder Utilisateur (uses MANAGER functions)
+        // Accorder Utilisateur (utilise les fonctions MANAGER)
         if (grantFormUser && card && overlay) {
             const { cid } = grantFormUser.dataset;
             const input = grantFormUser.querySelector('.grant-user-input');
             const userToGrant = input.value;
             const button = grantFormUser.querySelector('button[type="submit"]');
             if (!userToGrant || !userToGrant.includes('@')) { alert("Email utilisateur invalide."); return; }
-
             button.disabled = true; overlay.classList.add('visible');
             try {
-                const response = await fetch(MANAGER_GRANT_ACCESS_URL, { // <<< MANAGER URL
+                const response = await fetch(MANAGER_GRANT_ACCESS_URL, { // <<< URL MANAGER
                      method: 'POST', headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, userToGrant })
                 });
                 if (!response.ok) throw new Error(`Erreur ${response.status}: ${await response.text()}`);
-                input.value = ''; // Clear input on success
-                // Refresh list only on success
-                 await loadManagedCIDs();
+                input.value = ''; // Vide l'input
+                await loadManagedCIDs(); // Recharge après succès
             } catch (error) {
                  alert(`Erreur accord accès : ${error.message}`);
-                 button.disabled = false; // Re-enable button on error
-                 overlay.classList.remove('visible'); // Hide overlay on error
+                 button.disabled = false; // Réactive en cas d'erreur
+            } finally {
+                 overlay.classList.remove('visible'); // Cache l'overlay
             }
-            // No finally needed here
         }
     });
 
@@ -258,14 +240,14 @@ function initializeUIEventListeners() {
         const filterInput = e.target.closest('.filter-list-input');
         if (filterInput) {
             const searchTerm = filterInput.value.toLowerCase().trim();
-            const tabPanel = filterInput.closest('.tab-panel');
-            const list = tabPanel?.querySelector('.user-list'); // Manager only has user-list
+            const tabPanel = filterInput.closest('.tab-panel'); // Même si pas de tabs, structure conservée
+            const list = tabPanel?.querySelector('.user-list'); // Manager n'a que la user-list
             list?.querySelectorAll('li').forEach(li => {
                 if (li.children.length === 0 || !li.querySelector('span')) { li.style.display = ''; return; }
                 const emailSpan = li.querySelector('span');
                 const email = emailSpan?.textContent.toLowerCase() || '';
-                li.style.display = email.includes(searchTerm) ? 'flex' : 'none';
+                li.style.display = email.includes(searchTerm) ? 'flex' : 'none'; // Utilise flex
             });
         }
     });
-}
+} // Fin initializeUIEventListeners
