@@ -10,15 +10,11 @@ This web application provides Time-based One-Time Passwords (TOTP) for shared ac
 
 * **User View (`index.html`):**
     * Login via Google Sign-In.
-    * View assigned CID accounts.
+    * View only the CIDs they are assigned to manage.
+    * Add/revoke user access *only* for their CIDs.
     * Display current TOTP code and validity countdown for each assigned CID.
     * Copy TOTP code to clipboard.
-    * Search/filter assigned CIDs.
-* **Manager View (`manage.html`):**
-    * Login via Google Sign-In.
-    * View only the CIDs they are assigned to manage.
-    * Add/revoke user access *only* for their managed CIDs.
-    * Search/filter managed CIDs and users within each CID.
+    * Search/filter assigned CIDs and Users.
 * **Admin View (`admin.html`):**
     * Login via Google Sign-In (restricted to designated admin emails).
     * View *all* CIDs.

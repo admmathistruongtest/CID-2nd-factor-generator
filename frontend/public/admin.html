@@ -13,6 +13,10 @@
     <div id="auth-container" style="max-width: 400px; margin: 5em auto; text-align: center; padding: 2em; border: 1px solid #ddd; border-radius: 8px;">
         <h2>Accès Administrateur</h2>
         <p>Veuillez vous connecter avec votre compte Google administrateur.</p>
+
+        <div id="auth-error-message" style="color: var(--red-error); font-weight: bold; margin-bottom: 1em; display: none;">
+        {/* Message d'erreur injecté par JS */}
+        </div>
         <div id="g_id_onload"
              data-client_id="1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com"
              data-callback="handleCredentialResponse">

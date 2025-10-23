@@ -10,8 +10,6 @@ const ADMIN_GRANT_ACCESS_URL = `${BASE_URL}/adminGrantAccess`;
 const ADMIN_REVOKE_ACCESS_URL = `${BASE_URL}/adminRevokeAccess`;
 const ADMIN_GET_ALL_PERMISSIONS_URL = `${BASE_URL}/adminGetAllPermissions`;
 const ADMIN_GET_KNOWN_USERS_URL = `${BASE_URL}/adminGetKnownUsers`;
-const ADMIN_ADD_MANAGER_URL = `${BASE_URL}/adminAddManager`;
-const ADMIN_REMOVE_MANAGER_URL = `${BASE_URL}/adminRemoveManager`;
 
 // État de l'application
 let idToken = null;
@@ -56,24 +54,62 @@ function signOut() {
  * Fonction appelée par Google après une connexion réussie. Point d'entrée principal.
  */
 async function handleCredentialResponse(response) {
-    idToken = response.credential;
-    userInfo = parseJwt(idToken);
+    console.log("Connexion Google réussie, vérification des droits admin...");
+    idToken = response.credential; // Store token globally
+    userInfo = parseJwt(idToken); // Store user info globally
+
+    const authErrorDiv = document.getElementById('auth-error-message');
+    authErrorDiv.style.display = 'none'; // Cache l'ancien message d'erreur
+
     if (!idToken || !userInfo) {
-        alert("Erreur: Impossible de vérifier les informations de l'utilisateur.");
+        console.error("Token ou userInfo invalide après connexion.");
+        authErrorDiv.textContent = "Erreur lors de la vérification de l'utilisateur.";
+        authErrorDiv.style.display = 'block';
         return;
     }
-    document.getElementById('auth-container').style.display = 'none';
-    document.getElementById('admin-panel').style.display = 'block';
-    updateUserInfoUI();
-    initializeUIEventListeners(); // Attache tous les écouteurs d'événements
+
+    // --- Vérification Admin Immédiate ---
     try {
-        // Charge les permissions et les utilisateurs connus en parallèle
-        await Promise.all([
-            loadPermissions(),
-            loadKnownUsers()
-        ]);
-        // Note: fetchAndRenderLogs a été retiré
-    } catch (error) { console.error("Erreur lors du chargement des données initiales:", error); }
+        // On tente d'appeler une fonction réservée aux admins (comme charger les permissions)
+        const checkResponse = await fetch(ADMIN_GET_ALL_PERMISSIONS_URL, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${idToken}` }
+        });
+
+        // Si l'accès est refusé par le backend
+        if (checkResponse.status === 403) {
+            console.warn(`Accès admin refusé pour ${userInfo.email}.`);
+            authErrorDiv.textContent = "Accès refusé. Ce compte n'a pas les privilèges administrateur.";
+            authErrorDiv.style.display = 'block';
+            // Optionnel : Désactiver la connexion auto pour éviter boucle
+            google.accounts.id.disableAutoSelect();
+            // On NE montre PAS le panneau admin
+            return;
+        }
+        // Si une autre erreur serveur survient lors du check
+        if (!checkResponse.ok) {
+             throw new Error(`Erreur serveur (${checkResponse.status}) lors de la vérification admin.`);
+        }
+
+        // --- Si l'accès est autorisé (status 200 OK) ---
+        console.log(`Accès admin confirmé pour ${userInfo.email}.`);
+        document.getElementById('auth-container').style.display = 'none';
+        document.getElementById('admin-panel').style.display = 'block';
+
+        updateUserInfoUI();
+        initializeUIEventListeners(); // Initialise les listeners seulement si admin
+
+        // Charge les données nécessaires (permissions déjà reçues lors du check)
+        const permissions = await checkResponse.json(); // Réutilise la réponse du check
+        renderPermissions(permissions);
+        await loadKnownUsers(); // Charge les utilisateurs connus ensuite
+
+    } catch (error) {
+        console.error("Erreur lors de la vérification initiale des droits admin:", error);
+        authErrorDiv.textContent = "Erreur de communication avec le serveur lors de la vérification.";
+        authErrorDiv.style.display = 'block';
+        google.accounts.id.disableAutoSelect();
+    }
 }
 
 // ===============================================
