@@ -9,11 +9,24 @@ const USER_GET_TA_USERS_URL  = `${BASE_URL}/getTechAccountUsers`;
 const USER_GRANT_ACCESS_URL  = `${BASE_URL}/userGrantAccess`;
 const USER_REVOKE_ACCESS_URL = `${BASE_URL}/userRevokeAccess`;
 
+// Lookup endpoint(s)
+const LOOKUP_TA_URL_PRIMARY  = `${BASE_URL}/lookupTechnicalAccountUsers`;
+const LOOKUP_TA_URL_FALLBACK = `${BASE_URL}/lookupTechnicalAccount`;
+
+// New: send real email (backend you ajouteras cette Cloud Function)
+const SEND_REQUEST_URL       = `${BASE_URL}/sendAccessRequestEmail`;
+
 let idToken   = null;
 let userInfo  = null;
-let loadedTAs = {};    // { [taId]: tokens[] }
-let taUsersCache = {}; // { [taId]: string[] }
+let loadedTAs = {};          // { [taId]: tokens[] }
+let taUsersCache = {};       // { [taId]: string[] }
 const OPEN_HEIGHT = "60px";
+
+// Which TA is currently managed in the overlay
+let overlayCurrentTA = null;
+
+// Request compose state
+const composeState = { taId: null, owner: null };
 
 // =======================================================
 // === AUTH ==============================================
@@ -22,9 +35,9 @@ function parseJwt(token) {
   try {
     const base64Url = token.split('.')[1];
     const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')
-    );
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c =>
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join(''));
     return JSON.parse(jsonPayload);
   } catch (e) {
     console.error("Failed to decode JWT", e);
@@ -34,31 +47,27 @@ function parseJwt(token) {
 
 function updateUserInfoUI() {
   if (!userInfo) return;
-  const avatar = document.getElementById('user-avatar');
-  const email  = document.getElementById('user-email');
-  if (avatar) avatar.src = userInfo.picture || '';
-  if (email)  email.textContent = userInfo.email || '';
+  document.getElementById('user-avatar').src = userInfo.picture || '';
+  document.getElementById('user-email').textContent = userInfo.email || '';
 }
 
 function signOut() {
-  try { google?.accounts?.id?.disableAutoSelect?.(); } catch(_){}
+  google.accounts.id.disableAutoSelect();
   idToken = null;
   userInfo = null;
   loadedTAs = {};
   taUsersCache = {};
-  const list = document.getElementById('cid-list');
-  if (list) list.innerHTML = '';
+  document.getElementById('cid-list').innerHTML = '';
   document.getElementById('app-container').style.display = 'none';
   document.getElementById('auth-container').style.display = 'block';
 }
 
-// Make callback global for Google GSI
-window.handleCredentialResponse = async function handleCredentialResponse(response) {
-  idToken = response?.credential || null;
-  userInfo = idToken ? parseJwt(idToken) : null;
+async function handleCredentialResponse(response) {
+  idToken = response.credential;
+  userInfo = parseJwt(idToken);
 
   if (!idToken || !userInfo) {
-    alert("Sign-in error. Please try again.");
+    alert("Sign-in failed. Please try again.");
     return;
   }
 
@@ -67,34 +76,83 @@ window.handleCredentialResponse = async function handleCredentialResponse(respon
 
   updateUserInfoUI();
   await loadUserTechnicalAccounts();
-};
+}
+
+// =======================================================
+// === HELPERS ===========================================
+// =======================================================
+function withBtnLoading(btn, on, loadingLabel = 'Loading…') {
+  if (!btn) return;
+  if (on) {
+    if (!btn.dataset._label) btn.dataset._label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = loadingLabel;
+  } else {
+    btn.disabled = false;
+    if (btn.dataset._label) btn.innerHTML = btn.dataset._label;
+  }
+}
+
+function clearRunningInterval(container) {
+  const existingIntervalId = container?.dataset?.intervalId;
+  if (existingIntervalId) {
+    clearInterval(existingIntervalId);
+    delete container.dataset.intervalId;
+  }
+}
+
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(resource, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+function buildMailto(to, taId, subject, reason) {
+  const sub = subject || `Access request for ${taId} (Authenticator)`;
+  const body = `Hello,
+
+Could you please grant me access to the technical account:
+
+${taId}
+
+Requester: ${userInfo?.email || ''}
+
+Reason:
+${reason || ''}
+
+Thanks!`;
+  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(body)}`;
+}
 
 // =======================================================
 // === DATA LOAD =========================================
 // =======================================================
 async function loadUserTechnicalAccounts() {
-  if (!idToken) { console.error("Missing idToken"); return; }
+  if (!idToken) return console.error("Missing idToken");
   const listElement = document.getElementById('cid-list');
-  if (!listElement) return;
-  listElement.innerHTML = `<li>Loading technical accounts…</li>`;
+  listElement.innerHTML = `<li>Loading technical accounts...</li>`;
 
   try {
     const res = await fetch(GET_TA_URL, { headers: { 'Authorization': `Bearer ${idToken}` }});
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     const tas = await res.json();
-    console.log('[TA] fetched count =', tas?.length || 0);
     renderTaList(tas);
   } catch (err) {
-    console.error("loadUserTechnicalAccounts:", err);
-    listElement.innerHTML = `<li>Load error. See console.</li>`;
+    console.error("Load error:", err);
+    listElement.innerHTML = `<li>Failed to load. Check console.</li>`;
   }
 }
 
 async function loadTaUsers(taId) {
-  if (taUsersCache[taId]) { renderTaUsers(taId, taUsersCache[taId]); return; }
+  if (taUsersCache[taId]) { renderUsersOverlay(taId, taUsersCache[taId]); return; }
 
-  const statusEl = document.getElementById(`${taId}-users-status`);
-  if (statusEl) statusEl.textContent = "Loading…";
+  const statusEl = document.getElementById(`overlay-users-status`);
+  if (statusEl) statusEl.textContent = "Loading...";
 
   try {
     const res = await fetch(USER_GET_TA_USERS_URL, {
@@ -109,26 +167,26 @@ async function loadTaUsers(taId) {
 
     const users = await res.json();
     taUsersCache[taId] = Array.isArray(users) ? users : [];
-    renderTaUsers(taId, taUsersCache[taId]);
+    renderUsersOverlay(taId, taUsersCache[taId]);
     if (statusEl) statusEl.textContent = "";
   } catch (err) {
     console.error('loadTaUsers:', err);
     const fallback = [userInfo?.email].filter(Boolean);
     taUsersCache[taId] = fallback;
-    renderTaUsers(taId, fallback);
-    if (statusEl) statusEl.textContent = "Read unavailable (fallback shown).";
+    renderUsersOverlay(taId, fallback);
+    if (statusEl) statusEl.textContent = "Read unavailable (showing fallback).";
   }
 }
 
 // =======================================================
-// === RENDER ============================================
+// === RENDER (cards) ====================================
 // =======================================================
 function renderTaList(tas) {
   const listElement = document.getElementById('cid-list');
   if (!listElement) return;
 
   if (!tas || tas.length === 0) {
-    listElement.innerHTML = `<li>No technical account assigned.</li>`;
+    listElement.innerHTML = `<li>No technical account is assigned to you.</li>`;
     return;
   }
 
@@ -150,41 +208,30 @@ function renderTaList(tas) {
         <div class="token-content">
           <progress-ring class="wheel" stroke="4" radius="20" progress="0" color="whitesmoke"></progress-ring>
           <div id="${taId}-counter" class="displayCounter">- loading -</div>
+
+          <!-- Refresh button (hidden unless exhausted or error) -->
           <button class="icon-btn refresh-btn hidden" data-id="${taId}" title="Refresh">
             <span class="material-symbols-outlined">refresh</span>
           </button>
         </div>
+
+        <!-- Copy button (visible only when code ok) -->
         <button class="btn tiny copy-btn" data-target-id="${taId}-counter" title="Copy code">
           <span class="material-symbols-outlined" style="font-size:16px;">content_copy</span> Copy
         </button>
-      </div>
-
-      <!-- USERS panel -->
-      <div class="user-panel" id="${taId}-users">
-        <!-- Add first -->
-        <div class="panel-row">
-          <input type="email" class="panel-input js-user-add-input" data-id="${taId}" placeholder="Add user (email)">
-          <button class="btn tiny js-user-add" data-id="${taId}">
-            <span class="material-symbols-outlined">person_add</span> Add
-          </button>
-        </div>
-
-        <!-- Filter line -->
-        <div class="panel-row">
-          <input type="search" class="panel-input js-user-filter" data-id="${taId}" placeholder="Filter users…">
-          <div class="status" id="${taId}-users-status"></div>
-        </div>
-
-        <!-- List after -->
-        <ul class="user-list" id="${taId}-users-list"></ul>
       </div>
     </li>
   `).join('');
 }
 
-function renderTaUsers(taId, users) {
-  const ul = document.getElementById(`${taId}-users-list`);
+// =======================================================
+// === RENDER (overlay users) ============================
+// =======================================================
+function renderUsersOverlay(taId, users) {
+  const ul = document.getElementById('overlay-users-list');
   if (!ul) return;
+
+  overlayCurrentTA = taId;
 
   if (!Array.isArray(users) || users.length === 0) {
     ul.innerHTML = `<li><span class="email" style="color:var(--muted)">No authorized users.</span></li>`;
@@ -202,17 +249,10 @@ function renderTaUsers(taId, users) {
 // =======================================================
 // === TOKENS (manual refresh only) ======================
 // =======================================================
-function clearRunningInterval(container) {
-  const existingIntervalId = container?.dataset?.intervalId;
-  if (existingIntervalId) {
-    clearInterval(existingIntervalId);
-    delete container.dataset.intervalId;
-  }
-}
-
 async function fetchAndDisplayTokens(taId) {
   const tokenContainer = document.getElementById(taId);
   if (!tokenContainer) return;
+
   clearRunningInterval(tokenContainer);
   setUIState(tokenContainer, { state: 'loading' });
 
@@ -242,6 +282,7 @@ async function fetchAndDisplayTokens(taId) {
 async function manualRefresh(taId, refreshBtnEl) {
   const tokenContainer = document.getElementById(taId);
   if (!tokenContainer) return;
+
   clearRunningInterval(tokenContainer);
   setUIState(tokenContainer, { state: 'loading' });
   withBtnLoading(refreshBtnEl, true);
@@ -258,6 +299,7 @@ async function manualRefresh(taId, refreshBtnEl) {
     if (!res.ok) throw new Error(await res.text());
 
     loadedTAs[taId] = await res.json();
+
     const intervalId = setInterval(updateTokenDisplay, 1000, taId);
     tokenContainer.dataset.intervalId = intervalId;
     updateTokenDisplay(taId);
@@ -303,10 +345,21 @@ function updateTokenDisplay(taId) {
   const step = 30000;
   const currentToken = tokens.find(t => now >= t.timestamp && now < t.timestamp + step);
 
-  const wheel = tokenContainer.querySelector('.wheel');
+  let wheel = tokenContainer.querySelector('.wheel');
+  if (!wheel) {
+    wheel = document.createElement('progress-ring');
+    wheel.className = 'wheel';
+    wheel.setAttribute('stroke', '4');
+    wheel.setAttribute('radius', '20');
+    wheel.setAttribute('progress', '0');
+    wheel.setAttribute('color', 'whitesmoke');
+    const content = tokenContainer.querySelector('.token-content');
+    if (content) content.insertBefore(wheel, content.firstChild);
+  }
+
   if (currentToken) {
     const timeElapsed = now - currentToken.timestamp;
-    const percentLeft = 100 - (timeElapsed / step * 100);
+    const percentLeft = Math.max(0, 100 - (timeElapsed / step * 100));
     setUIState(tokenContainer, { state: 'ok', value: currentToken.token });
     if (wheel?.setProgress) wheel.setProgress(percentLeft);
   } else {
@@ -317,7 +370,7 @@ function updateTokenDisplay(taId) {
 }
 
 // =======================================================
-// === USER ACTIONS (add / revoke) =======================
+// === USER ACTIONS (grant / revoke) =====================
 // =======================================================
 async function userGrant(taId, email) {
   const res = await fetch(USER_GRANT_ACCESS_URL, {
@@ -340,23 +393,15 @@ async function userRevoke(taId, email) {
     },
     body: JSON.stringify({ technicalAccount: taId, userToRevoke: email })
   });
-  if (!res.ok) throw new Error(await res.text());
-}
-
-// =======================================================
-// === UI HELPERS ========================================
-function withBtnLoading(btn, on, label = 'Loading…') {
-  if (!btn) return;
-  if (on) {
-    if (!btn.dataset._label) btn.dataset._label = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = label;
-  } else {
-    btn.disabled = false;
-    if (btn.dataset._label) btn.innerHTML = btn.dataset._label;
+  if (!res.ok) {
+    const text = await res.text().catch(()=> '');
+    throw new Error(text || `HTTP ${res.status}`);
   }
 }
 
+// =======================================================
+// === UI HELPERS (open/close/copy) ======================
+// =======================================================
 function openToken(taId) {
   const el = document.getElementById(taId);
   if (el) el.style.height = OPEN_HEIGHT;
@@ -377,33 +422,116 @@ function copyTokenToClipboard(targetId, button) {
 
   navigator.clipboard.writeText(targetElement.textContent.trim())
     .then(() => {
-      const original = button.innerHTML;
+      const originalText = button.innerHTML;
       button.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">done</span> Copied!';
       button.classList.add('copied');
       setTimeout(() => {
-        button.innerHTML = original;
+        button.innerHTML = originalText;
         button.classList.remove('copied');
       }, 1200);
     })
     .catch(err => {
       console.error('Copy failed:', err);
-      alert("Copy not allowed. Check browser permissions.");
+      alert("Unable to copy. Check your browser permissions.");
     });
 }
 
 // =======================================================
+// === REQUEST ACCESS (lookup + render + compose) =========
+// =======================================================
+async function requestLookupExact(technicalAccount) {
+  const headers = { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' };
+
+  const pickOwners = (data) => {
+    if (!data) return null;
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data.authorizedUsers)) return data.authorizedUsers;
+    if (Array.isArray(data.users)) return data.users;
+    if (Array.isArray(data.owners)) return data.owners;
+    if (typeof data.authorizedUsers === 'string') return data.authorizedUsers.split(/[,\s;]+/).filter(Boolean);
+    return null;
+  };
+
+  const tryEndpoint = async (url, method = 'GET') => {
+    try {
+      const res = await fetchWithTimeout(
+        method === 'GET'
+          ? `${url}?technicalAccount=${encodeURIComponent(technicalAccount)}`
+          : url,
+        { method, headers, body: method === 'POST' ? JSON.stringify({ technicalAccount }) : undefined },
+        8000
+      );
+      if (res.status === 404) return { notFound: true };
+      if (res.status === 403) return { forbidden: true };
+      if (!res.ok) return null;
+      const json = await res.json().catch(() => null);
+      const owners = pickOwners(json);
+      if (owners) return { owners };
+      return { raw: json };
+    } catch { return null; }
+  };
+
+  let out = await tryEndpoint(LOOKUP_TA_URL_PRIMARY, 'GET');
+  if (out?.owners || out?.notFound || out?.forbidden) return out;
+
+  out = await tryEndpoint(LOOKUP_TA_URL_FALLBACK, 'GET');
+  if (out?.owners || out?.notFound || out?.forbidden) return out;
+
+  out = await tryEndpoint(USER_GET_TA_USERS_URL, 'POST');
+  return out || null;
+}
+
+function renderRequestOwners(taId, owners) {
+  const ul = document.getElementById('req-owners-list');
+  const filterRow = document.getElementById('req-owner-filter-row');
+  if (!ul) return;
+
+  if (!owners || owners.length === 0) {
+    filterRow.style.display = 'none';
+    ul.innerHTML = `<li><span class="email" style="color:var(--muted)">No owners found for this account.</span></li>`;
+    return;
+  }
+
+  // Show filter
+  filterRow.style.display = '';
+
+  ul.innerHTML = owners.map(email => `
+    <li class="req-owner-row">
+      <span class="email">${email}</span>
+      <button class="btn tiny ghost js-open-compose" data-id="${taId}" data-owner="${email}">
+        <span class="material-symbols-outlined">send</span> Send request
+      </button>
+    </li>
+  `).join('');
+}
+
+// =======================================================
 // === INIT LISTENERS ====================================
+// =======================================================
+function openOverlay(id) {
+  const root = document.getElementById(id);
+  if (!root) return;
+  root.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('no-scroll');
+}
+function closeOverlay(id) {
+  const root = document.getElementById(id);
+  if (!root) return;
+  root.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('no-scroll');
+}
+
 function initializeUI() {
-  // global search
+  // Global search on cards
   document.getElementById('search-input')?.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
     document.querySelectorAll('.cidElement').forEach(li => {
-      const taId = (li.dataset.id || '').toLowerCase();
+      const taId = li.dataset.id.toLowerCase();
       li.style.display = taId.includes(term) ? '' : 'none';
     });
   });
 
-  // profile/logout
+  // Profile / logout
   document.getElementById('user-profile-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
     document.getElementById('logout-dropdown')?.classList.toggle('visible');
@@ -413,12 +541,11 @@ function initializeUI() {
     document.getElementById('logout-dropdown')?.classList.remove('visible');
   });
 
-  // delegate on the list
+  // Card delegation
   document.getElementById('cid-list')?.addEventListener('click', async (e) => {
     const toggleBtn  = e.target.closest('.js-toggle');
     const copyBtn    = e.target.closest('.copy-btn');
     const usersBtn   = e.target.closest('.js-users');
-    const revokeBtn  = e.target.closest('.js-user-revoke');
     const refreshBtn = e.target.closest('.refresh-btn');
 
     if (toggleBtn) {
@@ -443,77 +570,216 @@ function initializeUI() {
 
     if (usersBtn) {
       const taId = usersBtn.dataset.id;
-      const panel = document.getElementById(`${taId}-users`); // IDs may contain '@' -> getElementById is safe
-      if (!panel) return;
-      const open = panel.classList.contains('open');
-      panel.classList.toggle('open', !open);
-      if (!open && !taUsersCache[taId]) await loadTaUsers(taId);
-      return;
-    }
-
-    if (revokeBtn) {
-      const taId = revokeBtn.dataset.id;
-      const email = revokeBtn.dataset.user;
-      if (!confirm(`Revoke ${email} from ${taId}?`)) return;
-      try {
-        withBtnLoading(revokeBtn, true, '…');
-        await userRevoke(taId, email);
-        taUsersCache[taId] = (taUsersCache[taId] || []).filter(u => u !== email);
-        renderTaUsers(taId, taUsersCache[taId]);
-      } catch (err) {
-        alert(`Revoke error: ${err.message || err}`);
-      } finally {
-        withBtnLoading(revokeBtn, false);
-      }
+      overlayCurrentTA = taId;
+      await loadTaUsers(taId);
+      document.getElementById('overlay-users-status').textContent = '';
+      document.getElementById('overlay-user-add-input').value = '';
+      document.getElementById('overlay-user-filter').value = '';
+      openOverlay('users-overlay');
       return;
     }
   });
 
-  // add + filter
-  document.getElementById('cid-list')?.addEventListener('click', async (e) => {
-    const addBtn = e.target.closest('.js-user-add');
-    if (!addBtn) return;
+  // Global revoke delegation
+  document.addEventListener('click', async (e) => {
+    const revokeBtn = e.target.closest('.js-user-revoke');
+    if (!revokeBtn) return;
 
-    const taId = addBtn.dataset.id;
-    const input = document.querySelector(`.js-user-add-input[data-id="${CSS.escape(taId)}"]`);
+    const taId  = revokeBtn.dataset.id;
+    const email = revokeBtn.dataset.user;
+    if (!taId || !email) return;
+
+    if (!confirm(`Revoke access for ${email} on ${taId}?`)) return;
+
+    try {
+      withBtnLoading(revokeBtn, true, '…');
+      await userRevoke(taId, email);
+      taUsersCache[taId] = (taUsersCache[taId] || []).filter(u => u !== email);
+      const row = revokeBtn.closest('li');
+      if (row) row.remove();
+      const listEl = document.getElementById('overlay-users-list');
+      if (listEl && listEl.children.length === 0) {
+        listEl.innerHTML = `<li><span class="email" style="color:var(--muted)">No authorized users.</span></li>`;
+      }
+    } catch (err) {
+      alert(`Revoke failed: ${err?.message || err}`);
+    } finally {
+      withBtnLoading(revokeBtn, false);
+    }
+  });
+
+  // Overlay: add user
+  document.getElementById('overlay-user-add-btn')?.addEventListener('click', async () => {
+    const taId = overlayCurrentTA;
+    const input = document.getElementById('overlay-user-add-input');
     const email = input?.value.trim();
-    if (!email || !email.includes('@')) { alert("Invalid email."); return; }
+    if (!taId || !email || !email.includes('@')) { alert("Invalid email."); return; }
 
-    withBtnLoading(addBtn, true);
+    const btn = document.getElementById('overlay-user-add-btn');
+    withBtnLoading(btn, true);
     try {
       await userGrant(taId, email);
       input.value = '';
       const set = new Set([...(taUsersCache[taId] || []), email]);
       taUsersCache[taId] = Array.from(set).sort((a,b)=>a.localeCompare(b));
-      renderTaUsers(taId, taUsersCache[taId]);
+      renderUsersOverlay(taId, taUsersCache[taId]);
+      document.getElementById('overlay-users-status').textContent = 'User added.';
     } catch (err) {
-      alert(`Add error: ${err.message || err}`);
+      alert(`Add failed: ${err.message || err}`);
     } finally {
-      withBtnLoading(addBtn, false);
+      withBtnLoading(btn, false);
     }
   });
 
-  document.getElementById('cid-list')?.addEventListener('input', (e) => {
-    const filter = e.target.closest('.js-user-filter');
-    if (!filter) return;
-    const taId = filter.dataset.id;
-    const term = filter.value.toLowerCase().trim();
-
-    const ul = document.getElementById(`${taId}-users-list`);
+  // Overlay: filter users
+  document.getElementById('overlay-user-filter')?.addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase().trim();
+    const ul = document.getElementById('overlay-users-list');
     if (!ul) return;
     ul.querySelectorAll('li').forEach(li => {
       const emailSpan = li.querySelector('.email');
       if (!emailSpan) { li.style.display = ''; return; }
-      const txt = (emailSpan.textContent || '').toLowerCase();
+      const txt = emailSpan.textContent.toLowerCase();
       li.style.display = txt.includes(term) ? 'grid' : 'none';
     });
+  });
+
+  // Users overlay close
+  document.getElementById('users-overlay-close')?.addEventListener('click', () => closeOverlay('users-overlay'));
+  document.getElementById('users-overlay-close-footer')?.addEventListener('click', () => closeOverlay('users-overlay'));
+  document.querySelector('#users-overlay .overlay-backdrop')?.addEventListener('click', () => closeOverlay('users-overlay'));
+
+  // Request overlay open/close (link only)
+  document.getElementById('open-request-overlay-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('req-ta-input').value = '';
+    document.getElementById('req-ta-status').textContent = '';
+    document.getElementById('req-owners-list').innerHTML = '';
+    document.getElementById('req-owner-filter-row').style.display = 'none';
+    document.getElementById('req-compose').classList.remove('show');
+    document.getElementById('req-compose').setAttribute('aria-hidden','true');
+    openOverlay('request-overlay');
+  });
+  document.getElementById('request-overlay-close')?.addEventListener('click', () => closeOverlay('request-overlay'));
+  document.getElementById('request-overlay-close-footer')?.addEventListener('click', () => closeOverlay('request-overlay'));
+  document.querySelector('#request-overlay .overlay-backdrop')?.addEventListener('click', () => closeOverlay('request-overlay'));
+
+  // Request overlay: exact check
+  document.getElementById('req-ta-check-btn')?.addEventListener('click', async () => {
+    const input = document.getElementById('req-ta-input');
+    const taId = input?.value.trim();
+    const status = document.getElementById('req-ta-status');
+    const ownersList = document.getElementById('req-owners-list');
+    if (!taId) { status.textContent = 'Please enter an exact technical account id.'; return; }
+
+    const btn = document.getElementById('req-ta-check-btn');
+    withBtnLoading(btn, true, 'Checking…');
+    status.textContent = 'Checking...';
+    ownersList.innerHTML = '';
+    document.getElementById('req-compose').classList.remove('show');
+    document.getElementById('req-compose').setAttribute('aria-hidden','true');
+
+    try {
+      const info = await requestLookupExact(taId);
+      if (!info) { status.textContent = 'Lookup feature is not available on this backend. Please contact an administrator.'; return; }
+      if (info.notFound) { status.textContent = `No technical account found for "${taId}".`; return; }
+      if (info.forbidden) { status.textContent = `This technical account exists, but you are not authorized to view its owners.`; return; }
+      if (Array.isArray(info.owners) && info.owners.length) {
+        status.textContent = `Found "${taId}". Select an owner and send a request:`;
+        renderRequestOwners(taId, info.owners);
+        // Save TA in state for compose later
+        composeState.taId = taId;
+        return;
+      }
+      status.textContent = 'No owners returned by the server.';
+    } catch (e) {
+      status.textContent = `Lookup failed: ${e?.message || e}`;
+    } finally {
+      withBtnLoading(btn, false);
+    }
+  });
+
+  // Filter owners in Request overlay
+  document.getElementById('req-owner-filter')?.addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase().trim();
+    document.querySelectorAll('#req-owners-list .req-owner-row').forEach(li => {
+      const emailSpan = li.querySelector('.email');
+      if (!emailSpan) { li.style.display = ''; return; }
+      const txt = emailSpan.textContent.toLowerCase();
+      li.style.display = txt.includes(term) ? 'grid' : 'none';
+    });
+  });
+
+  // Open compose panel (Send request)
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.js-open-compose');
+    if (!btn) return;
+
+    const owner = btn.dataset.owner;
+    const taId  = btn.dataset.id;
+    composeState.owner = owner;
+    composeState.taId  = taId;
+
+    document.getElementById('req-to-email').textContent = owner;
+    document.getElementById('req-subject').value = `Access request for ${taId} (Authenticator)`;
+    document.getElementById('req-reason').value = '';
+    document.getElementById('req-send-status').textContent = '';
+
+    const compose = document.getElementById('req-compose');
+    compose.classList.add('show');
+    compose.setAttribute('aria-hidden','false');
+    document.getElementById('req-reason').focus();
+  });
+
+  // Send request (real email if backend exists, else mailto fallback)
+  document.getElementById('req-send-btn')?.addEventListener('click', async () => {
+    const taId  = composeState.taId;
+    const owner = composeState.owner;
+    if (!taId || !owner) return;
+
+    const subject = (document.getElementById('req-subject').value || '').trim() || `Access request for ${taId} (Authenticator)`;
+    const reason  = (document.getElementById('req-reason').value || '').trim();
+    const status  = document.getElementById('req-send-status');
+    const btn     = document.getElementById('req-send-btn');
+
+    withBtnLoading(btn, true, 'Sending…');
+    status.textContent = 'Sending...';
+
+    try {
+      const res = await fetchWithTimeout(SEND_REQUEST_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          technicalAccount: taId,
+          to: owner,
+          subject,
+          reason,
+          requester: userInfo?.email || ''
+        })
+      }, 10000);
+
+      if (res && res.ok) {
+        status.textContent = 'Request sent ✅';
+        return;
+      }
+
+      // Fallback mailto
+      window.location.href = buildMailto(owner, taId, subject, reason);
+      status.textContent = 'Opened your email client to send the request.';
+    } catch {
+      // Fallback mailto
+      window.location.href = buildMailto(owner, taId, subject, reason);
+      status.textContent = 'Opened your email client to send the request.';
+    } finally {
+      withBtnLoading(btn, false);
+    }
   });
 }
 
 document.addEventListener('DOMContentLoaded', initializeUI);
 
 // =======================================================
-// === ProgressRing (SVG Web Component) ==================
+// === ProgressRing (SVG web component) ==================
 class ProgressRing extends HTMLElement {
   constructor() {
     super();

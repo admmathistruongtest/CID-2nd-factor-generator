@@ -1,20 +1,38 @@
-// index.js
-
+// Technical Accounts API (Cloud Functions, Node.js 20)
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const { OAuth2Client } = require('google-auth-library');
-const crypto = require('crypto'); // HMAC-SHA1
+const crypto = require('crypto');
 
 const firestore = new Firestore();
 const client = new OAuth2Client();
-const ALLOWED_ORIGIN = 'https://cid-2nd-factor-generator.web.app';
 
-/* ==============================
-   HELPERS TOTP (compat GA)
-============================== */
+// ---- CORS: allow prod + localhost for dev -------------
+const ALLOWED_ORIGINS = new Set([
+  'https://cid-2nd-factor-generator.web.app', // keep your current Firebase Hosting origin
+  'http://localhost:5000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5000',
+  'http://127.0.0.1:5173',
+]);
+
+const sgMail = require('@sendgrid/mail');
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
+const SENDER_EMAIL     = process.env.SENDER_EMAIL     || 'no-reply@your-domain.tld';
+if (SENDGRID_API_KEY) {
+  sgMail.setApiKey(SENDGRID_API_KEY);
+} else {
+  console.warn('[sendAccessRequestEmail] SENDGRID_API_KEY not configured; will return 501 so the front falls back to mailto:');
+}
+
+
+// Single collection for the new model
+const COL = 'technical_accounts';
+
+// ---------------- TOTP helpers -------------------------
 function base32ToBuffer(base32) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
   const clean = (base32 || '').toUpperCase().replace(/\s+/g, '').replace(/=+$/g, '');
-  if (!clean || /[^A-Z2-7]/.test(clean)) throw new Error('Secret Base32 invalide.');
+  if (!clean || /[^A-Z2-7]/.test(clean)) throw new Error('Invalid Base32 secret.');
   let bits = '';
   for (let i = 0; i < clean.length; i++) bits += alphabet.indexOf(clean[i]).toString(2).padStart(5, '0');
   const bytes = [];
@@ -36,108 +54,170 @@ function generateTotpAt(secretBase32, epochSec, step = 30, digits = 6) {
   return (bin % 10 ** digits).toString().padStart(digits, '0');
 }
 
-/* ==============================
-   MIDDLEWARES & UTILS
-============================== */
+// ---------------- Auth & CORS --------------------------
 async function handleAuthAndCors(req, res) {
-  res.set('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
+  const origin = req.get('Origin');
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    // default to prod to avoid blocking deployed site
+    res.set('Access-Control-Allow-Origin', 'https://cid-2nd-factor-generator.web.app');
+  }
+  res.set('Vary', 'Origin');
   res.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS, POST');
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   res.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
 
   if (req.method === 'OPTIONS') { res.status(204).send(''); return null; }
 
-  const authHeader = req.header('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).send('Accès non autorisé : Jeton manquant.');
+  const hdr = req.header('Authorization');
+  if (!hdr || !hdr.startsWith('Bearer ')) {
+    res.status(401).send('Unauthorized: missing bearer token.');
     return null;
   }
 
-  const idToken = authHeader.split('Bearer ')[1];
+  const idToken = hdr.slice('Bearer '.length);
   try {
     const ticket = await client.verifyIdToken({
       idToken,
       audience: '1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com',
     });
-    return (ticket.getPayload().email || '').toLowerCase();
-  } catch (error) {
-    console.error(JSON.stringify({ severity: "ERROR", event: "tokenVerificationFailed", errorMessage: error.message }));
-    res.status(401).send('Accès non autorisé : Jeton invalide.');
+    const email = (ticket.getPayload().email || '').toLowerCase();
+    return email;
+  } catch (e) {
+    console.error(JSON.stringify({
+      severity: "ERROR",
+      event: "tokenVerificationFailed",
+      message: e.message
+    }));
+    res.status(401).send('Unauthorized: invalid token.');
     return null;
   }
 }
 
-async function verifyAdmin(email) {
-  if (!email) return false;
-  try {
-    const adminDoc = await firestore.collection('_config').doc('admins').get();
-    if (!adminDoc.exists) return false;
-    const adminEmails = (adminDoc.data().emails || []).map(e => (e || '').toLowerCase());
-    return adminEmails.includes(email.toLowerCase());
-  } catch (error) {
-    console.error("Erreur lors de la vérification de l'admin :", error);
-    return false;
-  }
+const normEmail = v => String(v || '').trim().toLowerCase();
+const normId    = v => String(v || '').trim();
+
+/** Read a technical account id from body or query (supports legacy "cid"). */
+function getTechnicalAccountId(req) {
+  // new param name
+  const taNewBody  = req.body?.technicalAccount;
+  const taNewQuery = req.query?.technicalAccount;
+  // legacy param name still accepted
+  const legacyBody  = req.body?.cid;
+  const legacyQuery = req.query?.cid;
+  return normId(taNewBody || taNewQuery || legacyBody || legacyQuery || '');
 }
 
-async function handleAdminAuth(req, res) {
-  const email = await handleAuthAndCors(req, res);
-  if (!email) return null;
-  if (!(await verifyAdmin(email))) {
-    console.warn(JSON.stringify({ severity: "WARNING", event: "adminAccessAttemptDenied", user: email }));
-    res.status(403).send("Accès refusé : Droits administrateur requis.");
-    return null;
-  }
-  return email;
+/** Ensure caller is authorized to a technical account. */
+async function ensureAuthorized(taId, userEmail) {
+  const ref = firestore.collection(COL).doc(taId);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: false, reason: 'not_found' };
+  const data = snap.data() || {};
+  // normalize all stored emails to avoid case mismatch
+  const authz = Array.isArray(data.authorizedUsers)
+    ? data.authorizedUsers.map(normEmail)
+    : [];
+  if (!authz.includes(normEmail(userEmail))) return { ok: false, reason: 'forbidden' };
+  return { ok: true, data, ref };
 }
 
-function normEmail(v) { return String(v || '').trim().toLowerCase(); }
-function normCid(v)   { return String(v || '').trim(); }
 
-/* ==============================
-   USER FUNCTIONS
-============================== */
+/** [GET] Lookup exact technical account and return its approvers (authorizedUsers).
+ *  Auth required (Bearer ID token), but caller doesn't need to be approver of that TA.
+ *  Query: ?technicalAccount=<EXACT_ID>   (legacy alias ?cid=... also supported by getTechnicalAccountId)
+ */
+exports.lookupTechnicalAccountUsers = async (req, res) => {
+  const callerEmail = await handleAuthAndCors(req, res);
+  if (!callerEmail) return; // CORS / auth already handled
 
-// Liste des CIDs accessibles par l'utilisateur
-exports.getUserCIDs = async (req, res) => {
-  const userEmail = await handleAuthAndCors(req, res);
-  if (!userEmail) return;
+  if (req.method !== 'GET') {
+    return res.status(405).send('Method Not Allowed');
+  }
+
+  const technicalAccount = getTechnicalAccountId(req); // supports technicalAccount OR legacy cid
+  if (!technicalAccount) {
+    return res.status(400).send("Param 'technicalAccount' is required.");
+  }
 
   try {
-    const snapshot = await firestore.collection('utilisateurs')
-      .where('authorizedUsers', 'array-contains', userEmail)
-      .get();
-    const grantedCIDs = snapshot.docs.map(doc => doc.id);
-    res.status(200).json(grantedCIDs);
-  } catch (error) {
-    console.error(`Erreur dans getUserCIDs pour ${userEmail}:`, error);
-    res.status(500).send("Erreur interne du serveur.");
+    const doc = await firestore.collection(COL).doc(technicalAccount).get();
+
+    // Exact match only
+    if (!doc.exists) {
+      return res.status(404).send('Technical account not found.');
+    }
+
+    const data = doc.data() || {};
+    const users = Array.isArray(data.authorizedUsers) ? data.authorizedUsers.map(normEmail) : [];
+
+    // Tri ascendant pour l’UI
+    users.sort((a, b) => a.localeCompare(b));
+
+    // Log utile pour audit / debugging (facultatif)
+    console.log(JSON.stringify({
+      severity: "INFO",
+      event: "lookupTechnicalAccountUsers",
+      ta: technicalAccount,
+      approversCount: users.length,
+      requestedBy: callerEmail,
+    }));
+
+    return res.status(200).json(users);
+  } catch (e) {
+    console.error('lookupTechnicalAccountUsers:', e);
+    return res.status(500).send('Internal server error.');
   }
 };
 
-// Génère 10 codes TOTP (GA compatible) pour un CID si l'user y a accès
-exports.getNext10Tokens = async (req, res) => {
-  console.log("--- RUNNING CODE VERSION 11.0 (Admin+User model) ---");
 
+// =======================================================
+// USER API (Technical Accounts only)
+// =======================================================
+
+/** [GET] List technical accounts accessible by the caller. */
+exports.getUserTechnicalAccounts = async (req, res) => {
   const userEmail = await handleAuthAndCors(req, res);
   if (!userEmail) return;
 
-  const cid = normCid(req.body?.cid);
-  if (!cid) return res.status(400).send("Erreur : le paramètre 'cid' est manquant.");
+  try {
+    // If some legacy documents still store mixed case,
+    // we still query by the exact userEmail (lowercase here).
+    const snapshot = await firestore
+      .collection(COL)
+      .where('authorizedUsers', 'array-contains', userEmail)
+      .get();
+
+    const ids = snapshot.docs.map(d => d.id);
+    // Helpful server log to debug "empty list" issues.
+    console.log(JSON.stringify({
+      severity: "INFO",
+      event: "getUserTechnicalAccounts",
+      count: ids.length,
+      user: userEmail
+    }));
+    res.status(200).json(ids);
+  } catch (e) {
+    console.error('getUserTechnicalAccounts:', e);
+    res.status(500).send('Internal server error.');
+  }
+};
+
+/** [POST] Generate 10 TOTP codes if caller is authorized. */
+exports.getNext10Tokens = async (req, res) => {
+  const userEmail = await handleAuthAndCors(req, res);
+  if (!userEmail) return;
+
+  const technicalAccount = getTechnicalAccountId(req);
+  if (!technicalAccount) return res.status(400).send("Field 'technicalAccount' is required.");
 
   try {
-    const uDoc = await firestore.collection('utilisateurs').doc(cid).get();
-    const authz = (uDoc.exists && Array.isArray(uDoc.data().authorizedUsers)) ? uDoc.data().authorizedUsers.map(normEmail) : [];
-    if (!uDoc.exists || !authz.includes(userEmail)) {
-      console.warn(JSON.stringify({ severity: "WARNING", event: "tokenAccessDenied", user: userEmail, requestedCID: cid }));
-      // Message générique pour éviter l'énumération
-      return res.status(403).send("Accès refusé.");
-    }
+    const check = await ensureAuthorized(technicalAccount, userEmail);
+    if (!check.ok) return res.status(403).send('Access denied.');
 
-    const accountDoc = await firestore.collection('comptes').doc(cid).get();
-    if (!accountDoc.exists) return res.status(404).send(`Secret introuvable pour le CID ${cid}.`);
-    const secret = accountDoc.data()['totp secret'];
-    if (!secret) return res.status(404).send(`Champ 'totp secret' manquant pour le CID ${cid}.`);
+    const secret = check.data.totp;
+    if (!secret) return res.status(404).send(`Missing 'totp' for '${technicalAccount}'.`);
 
     const cleanSecret = secret.replace(/\s+/g, '').toUpperCase();
     const step = 30;
@@ -147,175 +227,241 @@ exports.getNext10Tokens = async (req, res) => {
     const tokens = [];
     for (let i = 0; i < 10; i++) {
       const epochSec = startSec + i * step;
-      tokens.push({ timestamp: epochSec * 1000, token: generateTotpAt(cleanSecret, epochSec, step, 6) });
+      tokens.push({
+        timestamp: epochSec * 1000,
+        token: generateTotpAt(cleanSecret, epochSec, step, 6)
+      });
     }
-    return res.status(200).json(tokens);
-  } catch (error) {
-    console.error(`Erreur dans getNext10Tokens pour ${userEmail} (${cid}):`, error?.stack || error);
-    return res.status(500).send("Erreur interne du serveur.");
+    res.status(200).json(tokens);
+  } catch (e) {
+    console.error('getNext10Tokens:', e);
+    res.status(500).send('Internal server error.');
   }
 };
 
-/* === NOUVELLES ROUTES USER (plus de managers) ===========================
-   - userGrantAccess: un user déjà autorisé sur <cid> peut ajouter d'autres users à CE <cid>.
-   - userRevokeAccess: (optionnel) un user déjà autorisé peut aussi retirer un user de CE <cid>.
-   ===================================================================== */
-
-// [USER] Ajoute un utilisateur sur un CID si l'appelant est déjà autorisé sur ce CID
+/** [POST] Grant a user on a technical account (caller must be authorized). */
 exports.userGrantAccess = async (req, res) => {
   const caller = await handleAuthAndCors(req, res);
   if (!caller) return;
 
-  const cid = normCid(req.body?.cid);
+  const technicalAccount = getTechnicalAccountId(req);
   const userToGrant = normEmail(req.body?.userToGrant);
-  if (!cid || !userToGrant) return res.status(400).send("Les champs 'cid' et 'userToGrant' sont requis.");
+  if (!technicalAccount || !userToGrant) {
+    return res.status(400).send("Fields 'technicalAccount' and 'userToGrant' are required.");
+  }
 
   try {
-    const ref = firestore.collection('utilisateurs').doc(cid);
-    const doc = await ref.get();
+    const check = await ensureAuthorized(technicalAccount, caller);
+    if (!check.ok) return res.status(403).send('Access denied.');
 
-    const currentAuthz = (doc.exists && Array.isArray(doc.data().authorizedUsers)) ? doc.data().authorizedUsers.map(normEmail) : [];
-    if (!doc.exists || !currentAuthz.includes(caller)) {
-      console.warn(JSON.stringify({ severity: "WARNING", event: "userGrantDenied", caller, cid }));
-      return res.status(403).send("Accès refusé.");
-    }
+    // Always store emails normalized
+    await check.ref.set(
+      { authorizedUsers: FieldValue.arrayUnion(userToGrant) },
+      { merge: true }
+    );
 
-    await ref.set({ authorizedUsers: FieldValue.arrayUnion(userToGrant) }, { merge: true });
-
-    console.log(JSON.stringify({ severity: "INFO", event: "userGrantAccess", caller, cid, target: userToGrant }));
-    return res.status(200).send(`Accès accordé à "${userToGrant}" pour "${cid}".`);
-  } catch (error) {
-    console.error(`Erreur userGrantAccess par ${caller} pour ${cid}:`, error);
-    return res.status(500).send("Erreur interne du serveur.");
+    res.status(200).send(`Granted '${userToGrant}' on '${technicalAccount}'.`);
+  } catch (e) {
+    console.error('userGrantAccess:', e);
+    res.status(500).send('Internal server error.');
   }
 };
 
-// [USER] Retire un utilisateur d'un CID si l'appelant est déjà autorisé sur ce CID
+/** [POST] Revoke a user (caller must be authorized). */
 exports.userRevokeAccess = async (req, res) => {
   const caller = await handleAuthAndCors(req, res);
   if (!caller) return;
 
-  const cid = normCid(req.body?.cid);
+  const technicalAccount = getTechnicalAccountId(req);
   const userToRevoke = normEmail(req.body?.userToRevoke);
-  if (!cid || !userToRevoke) return res.status(400).send("Les champs 'cid' et 'userToRevoke' sont requis.");
+  if (!technicalAccount || !userToRevoke) {
+    return res.status(400).send("Fields 'technicalAccount' and 'userToRevoke' are required.");
+  }
 
   try {
-    const ref = firestore.collection('utilisateurs').doc(cid);
+    const ref = firestore.collection(COL).doc(technicalAccount);
     const doc = await ref.get();
-
-    const currentAuthz = (doc.exists && Array.isArray(doc.data().authorizedUsers)) ? doc.data().authorizedUsers.map(normEmail) : [];
-    if (!doc.exists || !currentAuthz.includes(caller)) {
-      console.warn(JSON.stringify({ severity: "WARNING", event: "userRevokeDenied", caller, cid }));
-      return res.status(403).send("Accès refusé.");
+    const currentAuthz = doc.exists && Array.isArray(doc.data().authorizedUsers)
+      ? doc.data().authorizedUsers.map(normEmail) : [];
+    if (!doc.exists || !currentAuthz.includes(normEmail(caller))) {
+      return res.status(403).send('Access denied.');
     }
 
     await ref.update({ authorizedUsers: FieldValue.arrayRemove(userToRevoke) });
-    console.log(JSON.stringify({ severity: "INFO", event: "userRevokeAccess", caller, cid, target: userToRevoke }));
-    return res.status(200).send(`Accès révoqué pour "${userToRevoke}" sur "${cid}".`);
-  } catch (error) {
-    if (error.code === 5) return res.status(404).send("CID introuvable.");
-    console.error(`Erreur userRevokeAccess par ${caller} pour ${cid}:`, error);
-    return res.status(500).send("Erreur interne du serveur.");
+    res.status(200).send(`Revoked '${userToRevoke}' on '${technicalAccount}'.`);
+  } catch (e) {
+    if (e.code === 5) return res.status(404).send('Technical account not found.');
+    console.error('userRevokeAccess:', e);
+    res.status(500).send('Internal server error.');
   }
 };
 
-exports.getCidUsers = async (req, res) => {
+/** [GET/POST] List authorized users for a technical account (must be authorized). */
+exports.getTechAccountUsers = async (req, res) => {
   const email = await handleAuthAndCors(req, res);
   if (!email) return;
 
-  const cid = String(req.query.cid || req.body?.cid || '').trim();
-  if (!cid) return res.status(400).send("Paramètre 'cid' manquant.");
+  const technicalAccount = getTechnicalAccountId(req);
+  if (!technicalAccount) return res.status(400).send("Param 'technicalAccount' is required.");
 
   try {
-    const ref = firestore.collection('utilisateurs').doc(cid);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).send("CID introuvable.");
-
-    const authorized = (doc.data().authorizedUsers || []).map(v => String(v || '').toLowerCase());
-    if (!authorized.includes(email.toLowerCase())) return res.status(403).send("Accès refusé.");
-
-    return res.status(200).json(authorized);
+    const doc = await firestore.collection(COL).doc(technicalAccount).get();
+    if (!doc.exists) return res.status(404).send('Technical account not found.');
+    const authorized = (doc.data().authorizedUsers || []).map(normEmail);
+    if (!authorized.includes(normEmail(email))) return res.status(403).send('Access denied.');
+    res.status(200).json(authorized);
   } catch (e) {
-    console.error("getCidUsers:", e);
-    return res.status(500).send("Erreur interne du serveur.");
+    console.error('getTechAccountUsers:', e);
+    res.status(500).send('Internal server error.');
   }
 };
 
 
-/* ==============================
-   ADMIN FUNCTIONS
-============================== */
+// === SEND ACCESS REQUEST EMAIL ==============================================
+// Dépendances optionnelles : @sendgrid/mail OU nodemailer (voir plus bas)
+exports.sendAccessRequestEmail = async (req, res) => {
+  const caller = await handleAuthAndCors(req, res);
+  if (!caller) return; // OPTIONS / auth KO déjà traités
 
-// Admin: ajoute un user sur n'importe quel CID
-exports.adminGrantAccess = async (req, res) => {
-  const adminEmail = await handleAdminAuth(req, res);
-  if (!adminEmail) return;
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed. Use POST.');
+    return;
+  }
 
-  const cid = normCid(req.body?.cid);
-  const userToGrant = normEmail(req.body?.userToGrant);
-  if (!cid || !userToGrant) return res.status(400).send("Les champs 'cid' et 'userToGrant' sont requis.");
+  const taId      = normId(req.body?.technicalAccount);
+  const toEmail   = normEmail(req.body?.to);
+  const subjectIn = String(req.body?.subject || '').trim();
+  const reason    = String(req.body?.reason || '').trim();
+  const requester = normEmail(req.body?.requester || caller);
+
+  if (!taId || !toEmail) {
+    res.status(400).send("Fields 'technicalAccount' and 'to' are required.");
+    return;
+  }
 
   try {
-    const ref = firestore.collection('utilisateurs').doc(cid);
-    await ref.set({ authorizedUsers: FieldValue.arrayUnion(userToGrant) }, { merge: true });
-    console.log(JSON.stringify({ severity: "INFO", event: "adminGrantAccess", adminUser: adminEmail, cid, target: userToGrant }));
-    res.status(200).send("Permission accordée avec succès.");
-  } catch (error) {
-    console.error(`Erreur adminGrantAccess par ${adminEmail} pour ${cid}:`, error);
-    res.status(500).send("Erreur interne du serveur.");
+    // 1) Vérifier que le TA existe
+    const ref  = firestore.collection(COL).doc(taId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(404).send('Technical account not found.');
+      return;
+    }
+
+    // 2) Vérifier que le destinataire est bien owner du TA
+    const authz = Array.isArray(snap.data().authorizedUsers)
+      ? snap.data().authorizedUsers.map(normEmail)
+      : [];
+    if (!authz.includes(toEmail)) {
+      res.status(400).send('Recipient is not an authorized owner for this technical account.');
+      return;
+    }
+
+    // 3) Construire le message
+    const subject =
+      subjectIn || `Access request for ${taId} (Authenticator)`;
+
+    const textBody =
+`Hello,
+
+Could you please grant me access to the technical account:
+
+${taId}
+
+Requester: ${requester}
+
+Reason:
+${reason || '(not provided)'}
+
+Thanks!`;
+
+    // 4) Choisir le transport : SendGrid (prioritaire), sinon SMTP, sinon 501
+    const fromEmail = process.env.MAIL_FROM || `no-reply@${(requester.split('@')[1] || 'example.com')}`;
+
+    // 4.a) SendGrid
+    if (process.env.SENDGRID_API_KEY) {
+      let sgMail;
+      try {
+        sgMail = require('@sendgrid/mail');
+      } catch (e) {
+        // module absent → on tentera SMTP après
+        sgMail = null;
+      }
+      if (sgMail) {
+        sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+        await sgMail.send({
+          to: toEmail,
+          from: fromEmail,
+          subject,
+          text: textBody,
+        });
+
+        console.log(JSON.stringify({
+          severity: "INFO",
+          event: "sendAccessRequestEmail",
+          transport: "sendgrid",
+          ta: taId,
+          to: toEmail,
+          requester
+        }));
+
+        res.status(200).json({ ok: true, transport: 'sendgrid' });
+        return;
+      }
+    }
+
+    // 4.b) SMTP (Nodemailer)
+    if (process.env.SMTP_HOST) {
+      let nodemailer;
+      try {
+        nodemailer = require('nodemailer');
+      } catch (e) {
+        nodemailer = null;
+      }
+      if (!nodemailer) {
+        res.status(500).send('SMTP transport configured but "nodemailer" is not installed.');
+        return;
+      }
+
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT || 587),
+        secure: String(process.env.SMTP_SECURE || 'false') === 'true', // true = 465
+        auth: (process.env.SMTP_USER && process.env.SMTP_PASS) ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        } : undefined,
+      });
+
+      await transporter.sendMail({
+        from: fromEmail,
+        to: toEmail,
+        subject,
+        text: textBody,
+      });
+
+      console.log(JSON.stringify({
+        severity: "INFO",
+        event: "sendAccessRequestEmail",
+        transport: "smtp",
+        ta: taId,
+        to: toEmail,
+        requester
+      }));
+
+      res.status(200).json({ ok: true, transport: 'smtp' });
+      return;
+    }
+
+    // 4.c) Aucun transport dispo → 501 (le front fera un mailto fallback)
+    res.status(501).send('Email transport not configured on server.');
+  } catch (e) {
+    console.error('sendAccessRequestEmail:', e);
+    res.status(500).send('Internal server error.');
   }
 };
 
-// Admin: retire un user de n'importe quel CID
-exports.adminRevokeAccess = async (req, res) => {
-  const adminEmail = await handleAdminAuth(req, res);
-  if (!adminEmail) return;
 
-  const cid = normCid(req.body?.cid);
-  const userToRevoke = normEmail(req.body?.userToRevoke);
-  if (!cid || !userToRevoke) return res.status(400).send("Les champs 'cid' et 'userToRevoke' sont requis.");
-
-  try {
-    const ref = firestore.collection('utilisateurs').doc(cid);
-    await ref.update({ authorizedUsers: FieldValue.arrayRemove(userToRevoke) });
-    console.log(JSON.stringify({ severity: "INFO", event: "adminRevokeAccess", adminUser: adminEmail, cid, target: userToRevoke }));
-    res.status(200).send("Permission révoquée avec succès.");
-  } catch (error) {
-    if (error.code === 5) res.status(404).send("CID introuvable.");
-    else res.status(500).send("Erreur interne du serveur.");
-  }
-};
-
-// Admin: liste tous les CIDs et leurs utilisateurs
-exports.adminGetAllPermissions = async (req, res) => {
-  const adminEmail = await handleAdminAuth(req, res);
-  if (!adminEmail) return;
-
-  try {
-    const snapshot = await firestore.collection('utilisateurs').get();
-    const permissions = snapshot.docs.map(doc => ({
-      cid: doc.id,
-      authorizedUsers: (doc.data().authorizedUsers || []).map(normEmail),
-    }));
-    res.status(200).json(permissions);
-  } catch (error) {
-    console.error(`Erreur adminGetAllPermissions pour ${adminEmail}:`, error);
-    res.status(500).send("Erreur interne du serveur.");
-  }
-};
-
-// Admin: liste des emails connus
-exports.adminGetKnownUsers = async (req, res) => {
-  const adminEmail = await handleAdminAuth(req, res);
-  if (!adminEmail) return;
-
-  try {
-    const snapshot = await firestore.collection('utilisateurs').get();
-    const all = new Set();
-    snapshot.docs.forEach(doc => (doc.data().authorizedUsers || []).forEach(u => all.add(normEmail(u))));
-    res.status(200).json(Array.from(all).sort());
-  } catch (error) {
-    console.error(`Erreur adminGetKnownUsers pour ${adminEmail}:`, error);
-    res.status(500).send("Erreur interne du serveur.");
-  }
-};
+// ---------- Legacy aliases for old frontends (optional) ----------
+exports.getUserCIDs = exports.getUserTechnicalAccounts;
+exports.getCidUsers = exports.getTechAccountUsers;

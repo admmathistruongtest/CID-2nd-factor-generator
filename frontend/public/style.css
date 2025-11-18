@@ -36,11 +36,14 @@ body{
   background:var(--bg);background-image:var(--bg-accent);background-attachment:fixed;
   font-size:16px;line-height:1.5;
 }
+body.no-scroll{ overflow:hidden; }
+
 h1,h2,h4{margin:0;font-weight:600}
 h1{font-size:1.4em;letter-spacing:.2px}
 h2{font-size:1.2em}
 h4{font-size:1em}
 ul{margin:0;padding:0;list-style:none}
+
 input[type="search"],input[type="email"]{
   border:1px solid var(--gray-border);border-radius:8px;padding:8px 12px;font-size:14px;background:var(--card)
 }
@@ -48,6 +51,29 @@ input[type="search"]:focus,input[type="email"]:focus{
   outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)
 }
 .hidden{display:none!important}
+.muted{ color: var(--muted); }
+.text-link{ color: var(--primary); text-decoration: underline; cursor: pointer; }
+
+/* ======================================================= */
+/* === AUTH SCREEN ====================================== */
+/* ======================================================= */
+/* Auth screen (revival) */
+#auth-container{
+  max-width:400px;margin:5em auto;text-align:center;padding:2em;background:var(--card);
+  border:1px solid var(--border-medium);border-radius:var(--radius);box-shadow:var(--shadow)
+}
+#auth-container h2{margin-bottom:.5em}
+#auth-container p{margin-bottom:1.5em;color:var(--muted)}
+.g_id_signin{display:inline-block}
+
+/* Request overlay compose block */
+.req-compose{ display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border-light); }
+.req-compose.show{ display:block; }
+textarea.panel-input{ resize:vertical; min-height:110px; }
+.link{ color:var(--primary); text-decoration:underline; cursor:pointer; }
+.link:hover{ opacity:.85; }
+
+.g_id_signin{ display:inline-block }
 
 /* ======================================================= */
 /* === HEADER ============================================ */
@@ -106,18 +132,18 @@ header.top{
 .btn.copy-btn.copied{background:var(--green-success);color:#fff}
 .icon-btn{border:1px solid var(--border-medium);background:var(--card);color:var(--text-medium);padding:6px 8px;border-radius:10px;cursor:pointer;line-height:0}
 .icon-btn:hover{background:var(--bg-subtle)}
-.revoke-btn{background:var(--red-light)!important;color:var(--red-error)!important;border:1px solid var(--red-medium)!important;box-shadow:none!important}
+.revoke,
+.revoke-btn{background:var(--red-light)!important;color:var(--red-error)!important;border:1px solid var(--red-medium)!important;box-shadow:none!important;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+.revoke:hover,
 .revoke-btn:hover{background:var(--red-medium)!important}
 
 /* ======================================================= */
-/* === MAIN VIEW ======================================== */
+/* === MAIN PAGE (cards grid) ============================ */
 /* ======================================================= */
 .wrap{max-width:1280px;margin:30px auto;padding:0 20px}
 .card{width:100%;background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow)}
 .note{padding:15px 20px;color:var(--muted);font-size:13px;text-align:center;border-top:1px solid var(--border-light)}
 
-/* ====== Super-responsive grid of technical accounts ======
-   2 columns on desktop/tablet, 1 on small screens. */
 #cid-list{
   padding:20px;
   display:grid;
@@ -126,16 +152,10 @@ header.top{
   align-items:start;
   justify-content:center;
 }
-
-/* Fine-tuned gaps / wrap */
-@media (max-width:1440px){ #cid-list{ gap:18px; } }
 @media (max-width:1200px){ #cid-list{ gap:16px; } }
-@media (max-width:992px) { #cid-list{ grid-template-columns:repeat(auto-fit, minmax(clamp(300px, 48vw, 500px), 1fr)); } }
-@media (max-width:768px) { #cid-list{ grid-template-columns:minmax(0,1fr); } }  /* single column */
-@media (max-width:600px) { .wrap{padding:0 14px} .title{padding:10px 12px} }
-@media (max-width:420px) { .title .label{font-size:14px} }
+@media (max-width:992px) { #cid-list{ grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); } }
+@media (max-width:768px) { #cid-list{ grid-template-columns:minmax(0,1fr); } }
 
-/* === Card === */
 li.cidElement{
   border:1px solid var(--border-light);
   border-radius:14px;
@@ -147,14 +167,13 @@ li.cidElement{
   box-shadow:0 2px 4px rgba(0,0,0,.03);
 }
 
-/* === Card header (icon + email + actions) === */
 .title{
   padding:12px 16px;
   font-weight:600;
   background:var(--bg-subtle);
   display:flex;
   align-items:center;
-  justify-content:space-between;      /* push actions to the right */
+  justify-content:space-between;
   gap:10px;
   border-bottom:1px solid var(--border-light);
 }
@@ -170,23 +189,36 @@ li.cidElement{
   min-width:0;
   color:var(--text-medium);
   line-height:1.25;
-  overflow-wrap:anywhere;             /* never overflows */
-  white-space:normal;                 /* can wrap on 2 lines if needed */
+  overflow-wrap:anywhere;
+  white-space:normal;
 }
 .cid-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .cid-actions .btn,
 .cid-actions .icon-btn{flex:0 0 auto}
 
-/* === TOTP panel === */
+/* ======================================================= */
+/* === TOTP panel (perfectly centered) ================== */
+/* ======================================================= */
 .token{
-  position:relative;display:flex;justify-content:center;align-items:center;gap:15px;
-  padding:0 60px;background:var(--text-dark);overflow:hidden;height:0;
-  transition:height .25s ease;border-top:1px solid var(--text-dark)
+  position:relative;
+  display:flex;
+  justify-content:center;         /* center whole content */
+  align-items:center;
+  gap:0;
+  padding:0 96px;                 /* symmetric padding: reserves space both sides */
+  background:var(--text-dark);
+  overflow:hidden;
+  height:0;                       /* closed */
+  transition:height .25s ease;
+  border-top:1px solid var(--text-dark);
 }
 .token-content{
   display:flex;
+  justify-content:center;         /* center ring + code */
   align-items:center;
   gap:14px;
+  margin:0 auto;
+  text-align:center;
 }
 progress-ring.wheel{
   display:inline-block;
@@ -198,29 +230,50 @@ progress-ring.wheel{
   font-size:28px;letter-spacing:2px;vertical-align:middle;padding:15px 0;min-width:7ch;text-align:center
 }
 .wheel{vertical-align:middle}
-.token .copy-btn{position:absolute;right:15px;top:50%;transform:translateY(-50%)}
+
+/* Copy button positioned in the right padding; left padding balances visually */
+.token .copy-btn{position:absolute;right:24px;top:50%;transform:translateY(-50%)}
 .token .refresh-btn{border-radius:999px;background:var(--card);border-color:var(--border-light);padding:6px}
 .token .refresh-btn .material-symbols-outlined{font-size:18px}
 
+/* Hide any legacy inline user panel (avoid duplication with overlay) */
+.user-panel{ display:none !important; }
+
 /* ======================================================= */
-/* === USERS PANEL ====================================== */
+/* === OVERLAYS ========================================== */
 /* ======================================================= */
-.user-panel{
-  border-top:1px solid var(--border-light);background:#fff;padding:14px 16px;display:none
+.overlay{
+  position:fixed;inset:0;z-index:1000;
+  display:grid;
+  grid-template-rows:1fr;
+  align-items:center;justify-items:center;
+  visibility:hidden;opacity:0;transition:opacity .2s ease, visibility 0s linear .2s;
 }
-.user-panel.open{display:block}
-.user-panel .panel-input{
-  flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--gray-border);border-radius:8px
+.overlay[aria-hidden="false"]{ visibility:visible; opacity:1; transition-delay:0s; }
+.overlay-backdrop{
+  position:absolute;inset:0;background:rgba(0,0,0,.45)
 }
-.user-panel .panel-row{
+.overlay-panel{
+  position:relative;z-index:1;background:#fff;border-radius:16px;border:1px solid var(--border-light);
+  width:min(720px, 92vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.25)
+}
+.overlay-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px;border-bottom:1px solid var(--border-light)
+}
+.overlay-body{
+  padding:16px;overflow:auto
+}
+.overlay-footer{
+  padding:12px 16px;border-top:1px solid var(--border-light);display:flex;justify-content:flex-end;gap:8px
+}
+
+.panel-row{
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px
 }
-/* First row = add (input + button on one line when possible) */
-.user-panel .panel-row:first-of-type{flex-wrap:nowrap}
-@media (max-width:520px){ .user-panel .panel-row:first-of-type{flex-wrap:wrap} }
-.user-panel .panel-row:first-of-type .js-user-add-input{flex:1 1 260px;min-width:0}
-.user-panel .panel-row:first-of-type .js-user-add{flex:0 0 auto}
-.user-panel .panel-row .js-user-filter{flex:1 1 260px;max-width:360px}
+.panel-input{
+  flex:1;min-width:200px;padding:8px 10px;border:1px solid var(--gray-border);border-radius:8px
+}
 .user-list{
   margin-top:6px;border:1px solid var(--border-light);border-radius:10px;overflow:hidden
 }
@@ -230,20 +283,4 @@ progress-ring.wheel{
 }
 .user-list li:last-child{border-bottom:none}
 .user-list .email{color:var(--text);overflow-wrap:anywhere}
-.user-list .revoke{
-  background:var(--red-light);color:var(--red-error);border:1px solid var(--red-medium);border-radius:8px;
-  padding:6px 10px;font-size:12px;cursor:pointer
-}
-.user-list .revoke:hover{background:var(--red-medium)}
-.user-panel .status{font-size:13px;color:var(--muted);min-height:18px;margin-top:2px}
-
-/* ======================================================= */
-/* === LOGIN VIEW ======================================= */
-/* ======================================================= */
-#auth-container{
-  max-width:400px;margin:5em auto;text-align:center;padding:2em;background:var(--card);
-  border:1px solid var(--border-medium);border-radius:var(--radius);box-shadow:var(--shadow)
-}
-#auth-container h2{margin-bottom:.5em}
-#auth-container p{margin-bottom:1.5em;color:var(--muted)}
-.g_id_signin{display:inline-block}
+.status{ font-size:13px; color: var(--muted); min-height:18px; margin-top:2px }

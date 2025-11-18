@@ -6,33 +6,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Technical Accounts Authenticator</title>
   <link rel="icon" type="image/png" href="/favicon.png">
-
-  <!-- Fonts & Icons -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Material+Symbols+Outlined" rel="stylesheet">
-
-  <!-- Styles -->
   <link rel="stylesheet" href="style.css">
-
-  <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
-  <!-- ===== Auth screen ===== -->
+  <!-- Auth -->
   <div id="auth-container">
     <h2>Welcome</h2>
     <p>Sign in with Google to continue.</p>
-
-    <!-- GSI onload + callback (defined globally in script.js as window.handleCredentialResponse) -->
-    <div
-      id="g_id_onload"
-      data-client_id="1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com"
-      data-callback="handleCredentialResponse">
+    <div id="g_id_onload"
+         data-client_id="1075661736654-kampgefcq1iiuteerqjh1fm56fdj4q93.apps.googleusercontent.com"
+         data-callback="handleCredentialResponse">
     </div>
     <div class="g_id_signin" data-type="standard"></div>
   </div>
 
-  <!-- ===== App ===== -->
+  <!-- App -->
   <div id="app-container" style="display:none;">
     <header class="top">
       <h1>Technical Accounts</h1>
@@ -40,11 +31,11 @@
 
       <label class="toolbar" for="search-input">
         <span class="material-symbols-outlined">search</span>
-        <input id="search-input" name="search" type="search" placeholder="Search a technical account…">
+        <input id="search-input" name="search" type="search" placeholder="Search a technical account...">
       </label>
 
       <div class="user-profile-container">
-        <button class="user-profile-btn" id="user-profile-btn" title="Account">
+        <button class="user-profile-btn" id="user-profile-btn" title="My account">
           <img id="user-avatar" src="" alt="Avatar">
           <span id="user-email" class="user-email"></span>
         </button>
@@ -59,14 +50,117 @@
 
     <div class="wrap">
       <div class="card">
-        <!-- Keep historical ID for the grid -->
         <ul id="cid-list"></ul>
-        <div class="note">If codes are exhausted, click ↻ to refresh.</div>
+
+        <!-- Footer note with clickable link -->
+        <div class="note">
+          No technical account?
+          <a id="open-request-overlay-link" href="#" class="link">Send a request</a>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- App script (defines window.handleCredentialResponse) -->
+  <!-- ===== Overlay: Manage Users ===== -->
+  <div id="users-overlay" class="overlay" aria-hidden="true">
+    <div class="overlay-backdrop" data-close="users-overlay"></div>
+    <div class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="users-overlay-title">
+      <div class="overlay-header">
+        <h2 id="users-overlay-title">Manage users</h2>
+        <button class="icon-btn" id="users-overlay-close" aria-label="Close">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="overlay-body">
+        <!-- Add user row -->
+        <div class="panel-row">
+          <input type="email" class="panel-input" id="overlay-user-add-input" placeholder="Add a user (email)">
+          <button class="btn tiny" id="overlay-user-add-btn">
+            <span class="material-symbols-outlined">person_add</span> Add
+          </button>
+        </div>
+
+        <!-- Filter row -->
+        <div class="panel-row">
+          <input type="search" class="panel-input" id="overlay-user-filter" placeholder="Filter users...">
+          <div class="status" id="overlay-users-status"></div>
+        </div>
+
+        <!-- Users list -->
+        <ul class="user-list" id="overlay-users-list"></ul>
+      </div>
+
+      <div class="overlay-footer">
+        <button class="btn ghost tiny" id="users-overlay-close-footer">
+          <span class="material-symbols-outlined">close</span> Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Overlay: Request Access ===== -->
+  <div id="request-overlay" class="overlay" aria-hidden="true">
+    <div class="overlay-backdrop" data-close="request-overlay"></div>
+    <div class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="request-overlay-title">
+      <div class="overlay-header">
+        <h2 id="request-overlay-title">Request access</h2>
+        <button class="icon-btn" id="request-overlay-close" aria-label="Close">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="overlay-body">
+        <p class="muted">
+          If you cannot find a technical account, it means you are not yet authorized to receive codes for it.
+          Enter the exact technical account identifier below. We will look it up and let you select an owner to request access.
+        </p>
+
+        <!-- Exact lookup -->
+        <div class="panel-row">
+          <input type="search" class="panel-input" id="req-ta-input" placeholder="Exact technical account (email-like)">
+          <button class="btn tiny" id="req-ta-check-btn">
+            <span class="material-symbols-outlined">manage_search</span> Check
+          </button>
+        </div>
+        <div class="status" id="req-ta-status"></div>
+
+        <!-- Owners filter (shown after results) -->
+        <div class="panel-row" id="req-owner-filter-row" style="display:none;">
+          <input type="search" class="panel-input" id="req-owner-filter" placeholder="Filter owners…">
+        </div>
+
+        <!-- Owners list (after lookup) -->
+        <ul class="user-list" id="req-owners-list"></ul>
+
+        <!-- Compose request (hidden until an owner is selected) -->
+        <div class="req-compose" id="req-compose" aria-hidden="true">
+          <div class="panel-row">
+            <div class="status"><strong>To:</strong> <span id="req-to-email"></span></div>
+          </div>
+          <div class="panel-row">
+            <input type="text" class="panel-input" id="req-subject" placeholder="Subject">
+          </div>
+          <div class="panel-row">
+            <textarea class="panel-input" id="req-reason" rows="4" placeholder="Reason for access (details appreciated)"></textarea>
+          </div>
+          <div class="panel-row" style="justify-content:flex-end;">
+            <!-- <button class="btn tiny" id="req-send-btn">
+              <span class="material-symbols-outlined">send</span> Send request
+            </button> -->
+          </div>
+          <div class="status" id="req-send-status"></div>
+        </div>
+      </div>
+
+      <div class="overlay-footer">
+        <button class="btn ghost tiny" id="request-overlay-close-footer">
+          <span class="material-symbols-outlined">close</span> Close
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script src="script.js"></script>
 </body>
 </html>
