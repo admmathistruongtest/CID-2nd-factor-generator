@@ -498,9 +498,6 @@ function renderRequestOwners(taId, owners) {
   ul.innerHTML = owners.map(email => `
     <li class="req-owner-row">
       <span class="email">${email}</span>
-      <button class="btn tiny ghost js-open-compose" data-id="${taId}" data-owner="${email}">
-        <span class="material-symbols-outlined">send</span> Send request
-      </button>
     </li>
   `).join('');
 }
