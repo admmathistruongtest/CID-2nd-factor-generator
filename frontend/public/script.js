@@ -730,50 +730,6 @@ function initializeUI() {
     compose.setAttribute('aria-hidden','false');
     document.getElementById('req-reason').focus();
   });
-
-  // Send request (real email if backend exists, else mailto fallback)
-  document.getElementById('req-send-btn')?.addEventListener('click', async () => {
-    const taId  = composeState.taId;
-    const owner = composeState.owner;
-    if (!taId || !owner) return;
-
-    const subject = (document.getElementById('req-subject').value || '').trim() || `Access request for ${taId} (Authenticator)`;
-    const reason  = (document.getElementById('req-reason').value || '').trim();
-    const status  = document.getElementById('req-send-status');
-    const btn     = document.getElementById('req-send-btn');
-
-    withBtnLoading(btn, true, 'Sending…');
-    status.textContent = 'Sending...';
-
-    try {
-      const res = await fetchWithTimeout(SEND_REQUEST_URL, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${idToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          technicalAccount: taId,
-          to: owner,
-          subject,
-          reason,
-          requester: userInfo?.email || ''
-        })
-      }, 10000);
-
-      if (res && res.ok) {
-        status.textContent = 'Request sent ✅';
-        return;
-      }
-
-      // Fallback mailto
-      window.location.href = buildMailto(owner, taId, subject, reason);
-      status.textContent = 'Opened your email client to send the request.';
-    } catch {
-      // Fallback mailto
-      window.location.href = buildMailto(owner, taId, subject, reason);
-      status.textContent = 'Opened your email client to send the request.';
-    } finally {
-      withBtnLoading(btn, false);
-    }
-  });
 }
 
 document.addEventListener('DOMContentLoaded', initializeUI);
