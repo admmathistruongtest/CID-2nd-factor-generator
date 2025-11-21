@@ -197,7 +197,7 @@ function renderTaList(tas) {
 
         <div class="cid-actions">
           <button class="icon-btn js-users" data-id="${taId}" title="Manage users">
-            <span class="material-symbols-outlined">group</span>
+            <span class="material-symbols-outlined">manage_accounts</span>
           </button>
           <button class="btn tiny js-toggle" data-id="${taId}" aria-expanded="false">Show code</button>
         </div>
@@ -514,8 +514,68 @@ function openOverlay(id) {
 function closeOverlay(id) {
   const root = document.getElementById(id);
   if (!root) return;
+
+  // Si le focus est à l'intérieur de l'overlay, on le retire
+  if (root.contains(document.activeElement)) {
+    document.activeElement.blur(); // ou document.body.focus() si tu préfères
+  }
+
   root.setAttribute('aria-hidden', 'true');
   document.body.classList.remove('no-scroll');
+}
+
+
+/**
+ * Confirm modal custom 
+ * Return Promise<bool>.
+ */
+function openConfirmOverlay(message) {
+  const root      = document.getElementById('confirm-modal');
+  const msg       = document.getElementById('confirm-modal-message');
+  const yesBtn    = document.getElementById('confirm-yes');
+  const noBtn     = document.getElementById('confirm-no');
+  const closeBtn  = document.getElementById('confirm-modal-close');
+  const backdrop  = root?.querySelector('.overlay-backdrop');
+
+  if (!root || !yesBtn || !noBtn) {
+    console.warn('Confirm modal is missing from DOM, skipping confirmation.');
+    return Promise.resolve(true);
+  }
+
+  if (msg && message) {
+    msg.textContent = message;
+  }
+
+  // Affiche l’overlay comme les autres
+  root.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('no-scroll');
+
+  return new Promise((resolve) => {
+    function cleanup(result) {
+      root.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('no-scroll');
+
+      yesBtn.removeEventListener('click', onYes);
+      noBtn.removeEventListener('click', onNo);
+      if (closeBtn) closeBtn.removeEventListener('click', onNo);
+      if (backdrop) backdrop.removeEventListener('click', onNo);
+      document.removeEventListener('keydown', onKeyDown);
+
+      resolve(result);
+    }
+
+    function onYes()     { cleanup(true); }
+    function onNo()      { cleanup(false); }
+    function onKeyDown(e) {
+      if (e.key === 'Escape') onNo();
+    }
+
+    yesBtn.addEventListener('click', onYes);
+    noBtn.addEventListener('click', onNo);
+    if (closeBtn)  closeBtn.addEventListener('click', onNo);
+    if (backdrop)  backdrop.addEventListener('click', onNo);
+    document.addEventListener('keydown', onKeyDown);
+  });
 }
 
 function initializeUI() {
@@ -586,7 +646,8 @@ function initializeUI() {
     const email = revokeBtn.dataset.user;
     if (!taId || !email) return;
 
-    if (!confirm(`Revoke access for ${email} on ${taId}?`)) return;
+    const ok = await openConfirmOverlay(`Revoke access for ${email} on ${taId}?`);
+    if (!ok) return;
 
     try {
       withBtnLoading(revokeBtn, true, '…');

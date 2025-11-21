@@ -6,6 +6,14 @@ const crypto = require('crypto');
 const firestore = new Firestore();
 const client = new OAuth2Client();
 
+// ---- Logging helper (structured JSON) -----------------
+function logEvt(severity, event, fields = {}) {
+  const payload = { severity, event, ...fields };
+  if (severity === 'ERROR') console.error(JSON.stringify(payload));
+  else if (severity === 'WARNING') console.warn(JSON.stringify(payload));
+  else console.log(JSON.stringify(payload));
+}
+
 // ---- CORS: allow prod + localhost for dev -------------
 const ALLOWED_ORIGINS = new Set([
   'https://cid-2nd-factor-generator.web.app', // keep your current Firebase Hosting origin
@@ -23,7 +31,6 @@ if (SENDGRID_API_KEY) {
 } else {
   console.warn('[sendAccessRequestEmail] SENDGRID_API_KEY not configured; will return 501 so the front falls back to mailto:');
 }
-
 
 // Single collection for the new model
 const COL = 'technical_accounts';
@@ -85,11 +92,7 @@ async function handleAuthAndCors(req, res) {
     const email = (ticket.getPayload().email || '').toLowerCase();
     return email;
   } catch (e) {
-    console.error(JSON.stringify({
-      severity: "ERROR",
-      event: "tokenVerificationFailed",
-      message: e.message
-    }));
+    logEvt('ERROR', 'tokenVerificationFailed', { message: e.message });
     res.status(401).send('Unauthorized: invalid token.');
     return null;
   }
@@ -123,11 +126,7 @@ async function ensureAuthorized(taId, userEmail) {
   return { ok: true, data, ref };
 }
 
-
-/** [GET] Lookup exact technical account and return its approvers (authorizedUsers).
- *  Auth required (Bearer ID token), but caller doesn't need to be approver of that TA.
- *  Query: ?technicalAccount=<EXACT_ID>   (legacy alias ?cid=... also supported by getTechnicalAccountId)
- */
+/** [GET] Lookup exact technical account and return its approvers (authorizedUsers). */
 exports.lookupTechnicalAccountUsers = async (req, res) => {
   const callerEmail = await handleAuthAndCors(req, res);
   if (!callerEmail) return; // CORS / auth already handled
@@ -146,31 +145,30 @@ exports.lookupTechnicalAccountUsers = async (req, res) => {
 
     // Exact match only
     if (!doc.exists) {
+      logEvt('WARNING', 'lookupTechnicalAccountUsers.not_found', {
+        ta: technicalAccount,
+        requestedBy: callerEmail
+      });
       return res.status(404).send('Technical account not found.');
     }
 
     const data = doc.data() || {};
     const users = Array.isArray(data.authorizedUsers) ? data.authorizedUsers.map(normEmail) : [];
 
-    // Tri ascendant pour l’UI
-    users.sort((a, b) => a.localeCompare(b));
+    users.sort((a, b) => a.localeCompare(b)); // for UI
 
-    // Log utile pour audit / debugging (facultatif)
-    console.log(JSON.stringify({
-      severity: "INFO",
-      event: "lookupTechnicalAccountUsers",
+    logEvt('INFO', 'lookupTechnicalAccountUsers.success', {
       ta: technicalAccount,
       approversCount: users.length,
-      requestedBy: callerEmail,
-    }));
+      requestedBy: callerEmail
+    });
 
     return res.status(200).json(users);
   } catch (e) {
-    console.error('lookupTechnicalAccountUsers:', e);
+    logEvt('ERROR', 'lookupTechnicalAccountUsers.error', { ta: technicalAccount, requestedBy: callerEmail, message: e.message });
     return res.status(500).send('Internal server error.');
   }
 };
-
 
 // =======================================================
 // USER API (Technical Accounts only)
@@ -182,24 +180,19 @@ exports.getUserTechnicalAccounts = async (req, res) => {
   if (!userEmail) return;
 
   try {
-    // If some legacy documents still store mixed case,
-    // we still query by the exact userEmail (lowercase here).
     const snapshot = await firestore
       .collection(COL)
       .where('authorizedUsers', 'array-contains', userEmail)
       .get();
 
     const ids = snapshot.docs.map(d => d.id);
-    // Helpful server log to debug "empty list" issues.
-    console.log(JSON.stringify({
-      severity: "INFO",
-      event: "getUserTechnicalAccounts",
-      count: ids.length,
-      user: userEmail
-    }));
+    logEvt('INFO', 'getUserTechnicalAccounts.success', {
+      user: userEmail,
+      count: ids.length
+    });
     res.status(200).json(ids);
   } catch (e) {
-    console.error('getUserTechnicalAccounts:', e);
+    logEvt('ERROR', 'getUserTechnicalAccounts.error', { user: userEmail, message: e.message });
     res.status(500).send('Internal server error.');
   }
 };
@@ -210,14 +203,27 @@ exports.getNext10Tokens = async (req, res) => {
   if (!userEmail) return;
 
   const technicalAccount = getTechnicalAccountId(req);
-  if (!technicalAccount) return res.status(400).send("Field 'technicalAccount' is required.");
+  if (!technicalAccount) {
+    logEvt('WARNING', 'getNext10Tokens.bad_request', { user: userEmail, reason: "missing technicalAccount" });
+    return res.status(400).send("Field 'technicalAccount' is required.");
+  }
 
   try {
     const check = await ensureAuthorized(technicalAccount, userEmail);
-    if (!check.ok) return res.status(403).send('Access denied.');
+    if (!check.ok) {
+      logEvt('WARNING', 'getNext10Tokens.denied', {
+        user: userEmail,
+        ta: technicalAccount,
+        reason: check.reason
+      });
+      return res.status(403).send('Access denied.');
+    }
 
     const secret = check.data.totp;
-    if (!secret) return res.status(404).send(`Missing 'totp' for '${technicalAccount}'.`);
+    if (!secret) {
+      logEvt('WARNING', 'getNext10Tokens.missing_secret', { user: userEmail, ta: technicalAccount });
+      return res.status(404).send(`Missing 'totp' for '${technicalAccount}'.`);
+    }
 
     const cleanSecret = secret.replace(/\s+/g, '').toUpperCase();
     const step = 30;
@@ -232,9 +238,11 @@ exports.getNext10Tokens = async (req, res) => {
         token: generateTotpAt(cleanSecret, epochSec, step, 6)
       });
     }
+
+    logEvt('INFO', 'getNext10Tokens.success', { user: userEmail, ta: technicalAccount, batch: 10 });
     res.status(200).json(tokens);
   } catch (e) {
-    console.error('getNext10Tokens:', e);
+    logEvt('ERROR', 'getNext10Tokens.error', { user: userEmail, ta: technicalAccount, message: e.message });
     res.status(500).send('Internal server error.');
   }
 };
@@ -247,22 +255,37 @@ exports.userGrantAccess = async (req, res) => {
   const technicalAccount = getTechnicalAccountId(req);
   const userToGrant = normEmail(req.body?.userToGrant);
   if (!technicalAccount || !userToGrant) {
+    logEvt('WARNING', 'userGrantAccess.bad_request', {
+      caller,
+      ta: technicalAccount || '(missing)',
+      userToGrant: userToGrant || '(missing)'
+    });
     return res.status(400).send("Fields 'technicalAccount' and 'userToGrant' are required.");
   }
 
   try {
     const check = await ensureAuthorized(technicalAccount, caller);
-    if (!check.ok) return res.status(403).send('Access denied.');
+    if (!check.ok) {
+      logEvt('WARNING', 'userGrantAccess.denied', {
+        caller, ta: technicalAccount, target: userToGrant, reason: check.reason
+      });
+      return res.status(403).send('Access denied.');
+    }
 
-    // Always store emails normalized
     await check.ref.set(
       { authorizedUsers: FieldValue.arrayUnion(userToGrant) },
       { merge: true }
     );
 
+    logEvt('INFO', 'userGrantAccess.granted', {
+      caller, ta: technicalAccount, granted: userToGrant
+    });
+
     res.status(200).send(`Granted '${userToGrant}' on '${technicalAccount}'.`);
   } catch (e) {
-    console.error('userGrantAccess:', e);
+    logEvt('ERROR', 'userGrantAccess.error', {
+      caller, ta: technicalAccount, target: userToGrant, message: e.message
+    });
     res.status(500).send('Internal server error.');
   }
 };
@@ -275,6 +298,11 @@ exports.userRevokeAccess = async (req, res) => {
   const technicalAccount = getTechnicalAccountId(req);
   const userToRevoke = normEmail(req.body?.userToRevoke);
   if (!technicalAccount || !userToRevoke) {
+    logEvt('WARNING', 'userRevokeAccess.bad_request', {
+      caller,
+      ta: technicalAccount || '(missing)',
+      userToRevoke: userToRevoke || '(missing)'
+    });
     return res.status(400).send("Fields 'technicalAccount' and 'userToRevoke' are required.");
   }
 
@@ -283,15 +311,28 @@ exports.userRevokeAccess = async (req, res) => {
     const doc = await ref.get();
     const currentAuthz = doc.exists && Array.isArray(doc.data().authorizedUsers)
       ? doc.data().authorizedUsers.map(normEmail) : [];
-    if (!doc.exists || !currentAuthz.includes(normEmail(caller))) {
+    if (!doc.exists) {
+      logEvt('WARNING', 'userRevokeAccess.not_found', { caller, ta: technicalAccount, target: userToRevoke });
+      return res.status(404).send('Technical account not found.');
+    }
+    if (!currentAuthz.includes(normEmail(caller))) {
+      logEvt('WARNING', 'userRevokeAccess.denied', { caller, ta: technicalAccount, target: userToRevoke, reason: 'forbidden' });
       return res.status(403).send('Access denied.');
     }
 
     await ref.update({ authorizedUsers: FieldValue.arrayRemove(userToRevoke) });
+
+    logEvt('INFO', 'userRevokeAccess.revoked', {
+      caller, ta: technicalAccount, revoked: userToRevoke
+    });
+
     res.status(200).send(`Revoked '${userToRevoke}' on '${technicalAccount}'.`);
   } catch (e) {
-    if (e.code === 5) return res.status(404).send('Technical account not found.');
-    console.error('userRevokeAccess:', e);
+    if (e.code === 5) {
+      logEvt('WARNING', 'userRevokeAccess.not_found', { caller, ta: technicalAccount, target: userToRevoke, code: e.code });
+      return res.status(404).send('Technical account not found.');
+    }
+    logEvt('ERROR', 'userRevokeAccess.error', { caller, ta: technicalAccount, target: userToRevoke, message: e.message });
     res.status(500).send('Internal server error.');
   }
 };
@@ -302,23 +343,35 @@ exports.getTechAccountUsers = async (req, res) => {
   if (!email) return;
 
   const technicalAccount = getTechnicalAccountId(req);
-  if (!technicalAccount) return res.status(400).send("Param 'technicalAccount' is required.");
+  if (!technicalAccount) {
+    logEvt('WARNING', 'getTechAccountUsers.bad_request', { caller: email, reason: 'missing technicalAccount' });
+    return res.status(400).send("Param 'technicalAccount' is required.");
+  }
 
   try {
     const doc = await firestore.collection(COL).doc(technicalAccount).get();
-    if (!doc.exists) return res.status(404).send('Technical account not found.');
+    if (!doc.exists) {
+      logEvt('WARNING', 'getTechAccountUsers.not_found', { caller: email, ta: technicalAccount });
+      return res.status(404).send('Technical account not found.');
+    }
     const authorized = (doc.data().authorizedUsers || []).map(normEmail);
-    if (!authorized.includes(normEmail(email))) return res.status(403).send('Access denied.');
+    if (!authorized.includes(normEmail(email))) {
+      logEvt('WARNING', 'getTechAccountUsers.denied', { caller: email, ta: technicalAccount, reason: 'forbidden' });
+      return res.status(403).send('Access denied.');
+    }
+
+    logEvt('INFO', 'getTechAccountUsers.success', {
+      caller: email, ta: technicalAccount, count: authorized.length
+    });
+
     res.status(200).json(authorized);
   } catch (e) {
-    console.error('getTechAccountUsers:', e);
+    logEvt('ERROR', 'getTechAccountUsers.error', { caller: email, ta: technicalAccount, message: e.message });
     res.status(500).send('Internal server error.');
   }
 };
 
-
 // === SEND ACCESS REQUEST EMAIL ==============================================
-// Dépendances optionnelles : @sendgrid/mail OU nodemailer (voir plus bas)
 exports.sendAccessRequestEmail = async (req, res) => {
   const caller = await handleAuthAndCors(req, res);
   if (!caller) return; // OPTIONS / auth KO déjà traités
@@ -335,32 +388,32 @@ exports.sendAccessRequestEmail = async (req, res) => {
   const requester = normEmail(req.body?.requester || caller);
 
   if (!taId || !toEmail) {
+    logEvt('WARNING', 'sendAccessRequestEmail.bad_request', {
+      caller, ta: taId || '(missing)', to: toEmail || '(missing)'
+    });
     res.status(400).send("Fields 'technicalAccount' and 'to' are required.");
     return;
   }
 
   try {
-    // 1) Vérifier que le TA existe
     const ref  = firestore.collection(COL).doc(taId);
     const snap = await ref.get();
     if (!snap.exists) {
+      logEvt('WARNING', 'sendAccessRequestEmail.not_found', { caller, ta: taId, to: toEmail });
       res.status(404).send('Technical account not found.');
       return;
     }
 
-    // 2) Vérifier que le destinataire est bien owner du TA
     const authz = Array.isArray(snap.data().authorizedUsers)
       ? snap.data().authorizedUsers.map(normEmail)
       : [];
     if (!authz.includes(toEmail)) {
+      logEvt('WARNING', 'sendAccessRequestEmail.invalid_recipient', { caller, ta: taId, to: toEmail });
       res.status(400).send('Recipient is not an authorized owner for this technical account.');
       return;
     }
 
-    // 3) Construire le message
-    const subject =
-      subjectIn || `Access request for ${taId} (Authenticator)`;
-
+    const subject = subjectIn || `Access request for ${taId} (Authenticator)`;
     const textBody =
 `Hello,
 
@@ -375,50 +428,29 @@ ${reason || '(not provided)'}
 
 Thanks!`;
 
-    // 4) Choisir le transport : SendGrid (prioritaire), sinon SMTP, sinon 501
     const fromEmail = process.env.MAIL_FROM || `no-reply@${(requester.split('@')[1] || 'example.com')}`;
 
-    // 4.a) SendGrid
     if (process.env.SENDGRID_API_KEY) {
       let sgMail;
-      try {
-        sgMail = require('@sendgrid/mail');
-      } catch (e) {
-        // module absent → on tentera SMTP après
-        sgMail = null;
-      }
+      try { sgMail = require('@sendgrid/mail'); } catch { sgMail = null; }
       if (sgMail) {
         sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-        await sgMail.send({
-          to: toEmail,
-          from: fromEmail,
-          subject,
-          text: textBody,
-        });
+        await sgMail.send({ to: toEmail, from: fromEmail, subject, text: textBody });
 
-        console.log(JSON.stringify({
-          severity: "INFO",
-          event: "sendAccessRequestEmail",
-          transport: "sendgrid",
-          ta: taId,
-          to: toEmail,
-          requester
-        }));
+        logEvt('INFO', 'sendAccessRequestEmail.sent', {
+          transport: 'sendgrid', ta: taId, to: toEmail, requester, caller
+        });
 
         res.status(200).json({ ok: true, transport: 'sendgrid' });
         return;
       }
     }
 
-    // 4.b) SMTP (Nodemailer)
     if (process.env.SMTP_HOST) {
       let nodemailer;
-      try {
-        nodemailer = require('nodemailer');
-      } catch (e) {
-        nodemailer = null;
-      }
+      try { nodemailer = require('nodemailer'); } catch { nodemailer = null; }
       if (!nodemailer) {
+        logEvt('ERROR', 'sendAccessRequestEmail.smtp_missing_module', { ta: taId, to: toEmail, caller });
         res.status(500).send('SMTP transport configured but "nodemailer" is not installed.');
         return;
       }
@@ -433,35 +465,20 @@ Thanks!`;
         } : undefined,
       });
 
-      await transporter.sendMail({
-        from: fromEmail,
-        to: toEmail,
-        subject,
-        text: textBody,
-      });
+      await transporter.sendMail({ from: fromEmail, to: toEmail, subject, text: textBody });
 
-      console.log(JSON.stringify({
-        severity: "INFO",
-        event: "sendAccessRequestEmail",
-        transport: "smtp",
-        ta: taId,
-        to: toEmail,
-        requester
-      }));
+      logEvt('INFO', 'sendAccessRequestEmail.sent', {
+        transport: 'smtp', ta: taId, to: toEmail, requester, caller
+      });
 
       res.status(200).json({ ok: true, transport: 'smtp' });
       return;
     }
 
-    // 4.c) Aucun transport dispo → 501 (le front fera un mailto fallback)
+    logEvt('WARNING', 'sendAccessRequestEmail.transport_unconfigured', { ta: taId, to: toEmail, caller });
     res.status(501).send('Email transport not configured on server.');
   } catch (e) {
-    console.error('sendAccessRequestEmail:', e);
+    logEvt('ERROR', 'sendAccessRequestEmail.error', { ta: taId, to: toEmail, caller, message: e.message });
     res.status(500).send('Internal server error.');
   }
 };
-
-
-// ---------- Legacy aliases for old frontends (optional) ----------
-exports.getUserCIDs = exports.getUserTechnicalAccounts;
-exports.getCidUsers = exports.getTechAccountUsers;

@@ -2,7 +2,7 @@
 /* === VARIABLES & GLOBAL STYLES ======================== */
 /* ======================================================= */
 :root{
-  --bg:#f6f7f9;
+  --bg:#FFFF;
   --bg-accent:
     radial-gradient(1200px 600px at 20% -10%, rgba(47,111,237,.10), transparent 60%),
     radial-gradient(900px 500px at 120% 0%, rgba(47,111,237,.07), transparent 60%);
@@ -29,7 +29,6 @@
   --gray-border:#d1d5db;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
 body{
   margin:0;color:var(--text);
   font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
@@ -57,22 +56,54 @@ input[type="search"]:focus,input[type="email"]:focus{
 /* ======================================================= */
 /* === AUTH SCREEN ====================================== */
 /* ======================================================= */
-/* Auth screen (revival) */
+/* ---------- Auth screen: responsive card ---------- */
 #auth-container{
-  max-width:400px;margin:5em auto;text-align:center;padding:2em;background:var(--card);
-  border:1px solid var(--border-medium);border-radius:var(--radius);box-shadow:var(--shadow)
+  width: min(520px, calc(100% - 32px));
+  /* Centre vertical sans dépasser la hauteur de viewport :
+     320px ≃ hauteur mini de la carte (titre + texte + bouton Google). */
+  margin: max(24px, calc((100dvh - 320px)/2)) auto;
+  text-align: center;
+  padding: clamp(20px, 4vw, 28px);
+  background: var(--card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
-#auth-container h2{margin-bottom:.5em}
-#auth-container p{margin-bottom:1.5em;color:var(--muted)}
-.g_id_signin{display:inline-block}
 
-/* Request overlay compose block */
+#auth-container h2{
+  margin: 0 0 .5em 0;
+  font-size: clamp(1.15rem, 2.2vw + .6rem, 1.5rem);
+}
+
+#auth-container p{
+  margin: 0 0 1.25em 0;
+  color: var(--muted);
+  font-size: clamp(.95rem, 1.2vw + .7rem, 1rem);
+}
+
+#auth-container .g_id_signin{ display:inline-block; }
+
+/* Très petites hauteurs : on réduit la marge pour éviter le scroll */
+@media (max-height: 520px) {
+  #auth-container { margin: 16px auto; }
+}
+
+/* Très petits écrans en largeur : padding & radius plus compacts */
+@media (max-width: 380px){
+  #auth-container{
+    padding: 16px;
+    border-radius: 12px;
+  }
+}
 .req-compose{ display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border-light); }
 .req-compose.show{ display:block; }
 textarea.panel-input{ resize:vertical; min-height:110px; }
+
+/* Lien CTA en pied de page */
 .link{ color:var(--primary); text-decoration:underline; cursor:pointer; }
 .link:hover{ opacity:.85; }
 
+/* (On ne garde qu'une seule définition) */
 .g_id_signin{ display:inline-block }
 
 /* ======================================================= */

@@ -61,7 +61,7 @@
     </div>
   </div>
 
-  <!-- ===== Overlay: Manage Users ===== -->
+    <!-- ===== Overlay: Manage Users ===== -->
   <div id="users-overlay" class="overlay" aria-hidden="true">
     <div class="overlay-backdrop" data-close="users-overlay"></div>
     <div class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="users-overlay-title">
@@ -90,12 +90,6 @@
         <!-- Users list -->
         <ul class="user-list" id="overlay-users-list"></ul>
       </div>
-
-      <div class="overlay-footer">
-        <button class="btn ghost tiny" id="users-overlay-close-footer">
-          <span class="material-symbols-outlined">close</span> Close
-        </button>
-      </div>
     </div>
   </div>
 
@@ -112,13 +106,13 @@
 
       <div class="overlay-body">
         <p class="muted">
-          If you cannot find a technical account, it means you are not yet authorized to receive codes for it.
-          Enter the exact technical account identifier below. We will look it up and copy and paste it in a mail and send a request to that user.
+          If you cannot find a technical account, it means you are not yet authorized to use it.
+          Enter the exact technical account email below & it will show its users.
         </p>
 
         <!-- Exact lookup -->
         <div class="panel-row">
-          <input type="search" class="panel-input" id="req-ta-input" placeholder="Exact technical account (email-like)">
+          <input type="search" class="panel-input" id="req-ta-input" placeholder="Exact technical account (email)">
           <button class="btn tiny" id="req-ta-check-btn">
             <span class="material-symbols-outlined">manage_search</span> Check
           </button>
@@ -152,15 +146,30 @@
           <div class="status" id="req-send-status"></div>
         </div>
       </div>
-
-      <div class="overlay-footer">
-        <button class="btn ghost tiny" id="request-overlay-close-footer">
-          <span class="material-symbols-outlined">close</span> Close
-        </button>
-      </div>
     </div>
   </div>
 
+  <!-- ===== Overlay: Confirm (revoke) ===== -->
+  <div id="confirm-modal" class="overlay" aria-hidden="true">
+    <div class="overlay-backdrop" data-close="confirm-modal"></div>
+    <div class="overlay-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <div class="overlay-header">
+        <h2 id="confirm-modal-title">Confirm revoke</h2>
+        <button class="icon-btn" id="confirm-modal-close" aria-label="Close">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <div class="overlay-body">
+        <p id="confirm-modal-message"></p>
+
+        <div class="panel-row" style="justify-content:flex-end; gap:0.5rem;">
+          <button class="btn tiny" id="confirm-no">Cancel</button>
+          <button class="btn tiny" id="confirm-yes">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <script src="script.js"></script>
 </body>
 </html>
