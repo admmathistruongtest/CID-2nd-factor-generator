@@ -133,12 +133,11 @@ High-level architecture:
 
 You can embed them as images in the README:
 
-```markdown
-![Login & Load TAs](diagram-login-load-ta.png)
-![Show Tokens](diagram-totp.png)
-![Manage Users](diagram-manage-user.png)
-![Request Access](diagram-request-unofficial.png)
-```
+<img width="1289" height="809" alt="diagram-login-load-ta" src="https://github.com/user-attachments/assets/8abe2bc1-0171-4a73-8d9b-24422dfd30e2" />
+<img width="1249" height="821" alt="diagram-totp" src="https://github.com/user-attachments/assets/f8557f58-a3b6-44b7-80a3-28503c5b061d" />
+<img width="1242" height="1163" alt="diagram-manage-user" src="https://github.com/user-attachments/assets/1ae941a7-1809-481e-834f-41a2f6b0531b" />
+<img width="1847" height="1921" alt="diagram-request-unofficial" src="https://github.com/user-attachments/assets/0c7b966f-bfc1-4a92-8c82-68ac53de137c" />
+
 
 
 ## 5. Frontend details
