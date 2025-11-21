@@ -120,23 +120,22 @@ High-level architecture:
 > Below are the four flows we currently model.
 
 1. **Login + load TAs**  
-   _Diagram: `docs/diagrams/01-login-load-tas.puml`_
+<img width="1289" height="809" alt="diagram-login-load-ta" src="https://github.com/user-attachments/assets/8abe2bc1-0171-4a73-8d9b-24422dfd30e2" />
 
 2. **Show TOTP code for a TA**  
-   _Diagram: `docs/diagrams/02-show-tokens.puml`_
+<img width="1249" height="821" alt="diagram-totp" src="https://github.com/user-attachments/assets/f8557f58-a3b6-44b7-80a3-28503c5b061d" />
 
 3. **Manage users (add / revoke with confirmation modal)**  
-   _Diagram: `docs/diagrams/03-manage-users.puml`_
+<img width="1242" height="1163" alt="diagram-manage-user" src="https://github.com/user-attachments/assets/1ae941a7-1809-481e-834f-41a2f6b0531b" />
 
 4. **Request access (lookup TA + send request email)**  
-   _Diagram: `docs/diagrams/04-request-access.puml`_
+<img width="1847" height="1921" alt="diagram-request-unofficial" src="https://github.com/user-attachments/assets/0c7b966f-bfc1-4a92-8c82-68ac53de137c" />
 
 You can embed them as images in the README:
 
-<img width="1289" height="809" alt="diagram-login-load-ta" src="https://github.com/user-attachments/assets/8abe2bc1-0171-4a73-8d9b-24422dfd30e2" />
-<img width="1249" height="821" alt="diagram-totp" src="https://github.com/user-attachments/assets/f8557f58-a3b6-44b7-80a3-28503c5b061d" />
-<img width="1242" height="1163" alt="diagram-manage-user" src="https://github.com/user-attachments/assets/1ae941a7-1809-481e-834f-41a2f6b0531b" />
-<img width="1847" height="1921" alt="diagram-request-unofficial" src="https://github.com/user-attachments/assets/0c7b966f-bfc1-4a92-8c82-68ac53de137c" />
+
+
+
 
 
 
