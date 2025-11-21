@@ -594,8 +594,8 @@ ORDER BY timestamp DESC;
 
 2.  **Install tools:**
     * Node.js (LTS)
-    * Firebase CLI (if using Firebase Functions / Hosting)
-    * gcloud CLI (if using Cloud Functions / Cloud Run directly)
+    * Firebase CLI
+    * gcloud CLI
 
 3.  **Frontend:**
     * Serve the static files from a local HTTP server or via Firebase:
